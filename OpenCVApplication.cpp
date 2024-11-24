@@ -6,8 +6,6 @@
 #include <opencv2/core/utils/logger.hpp>
 #include <queue>
 #include <random>
-#include <baseapi.h>
-#include <allheaders.h>
 #pragma comment(lib, "comdlg32.lib")  // for GetOpenFileNameA
 #pragma comment(lib, "shell32.lib")   // for SHGetPathFromIDListA and SHBrowseForFolderA
 #include <opencv2/opencv.hpp>
@@ -738,7 +736,7 @@ Mat createVerticalKernel(int id) {
 }
 
 Mat convolution(const Mat& src, Mat& kernel) {
-	Mat dst = Mat::zeros(src.size(), CV_32FC1); 
+	Mat dst = Mat::zeros(src.size(), CV_32FC1);
 	float sumNeg = 0.0;
 	float sumPos = 0.0;
 	bool isLow = true;
@@ -870,18 +868,18 @@ void BFS_canny2(Mat& src, Mat& labels, int i, int j, int label) {
 	int h = src.rows;
 	int w = src.cols;
 	std::queue<Point> Q;
-	Q.push(Point(j, i)); 
+	Q.push(Point(j, i));
 	while (!Q.empty()) {
 		Point q = Q.front();
 		Q.pop();
-		labels.at<int>(q.y, q.x) = label; 
+		labels.at<int>(q.y, q.x) = label;
 		for (int dy = -1; dy <= 1; dy++) {
 			for (int dx = -1; dx <= 1; dx++) {
 				int nx = q.x + dx;
 				int ny = q.y + dy;
 				if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
 					if (src.at<uchar>(ny, nx) == 255 && labels.at<int>(ny, nx) == 0) {
-						labels.at<int>(ny, nx) = label; 
+						labels.at<int>(ny, nx) = label;
 						Q.push(Point(nx, ny));
 					}
 				}
@@ -959,7 +957,7 @@ Mat cannyEdgeDetection(Mat& src, int w) {
 				}
 				else nonMaxima.at<uchar>(i, j) = 0;
 			}
-		
+
 			if (nonMaxima.at<uchar>(i, j) == 0 && i != 0 && j != 0 && i < h - 1 && j < w1 - 1) {
 				ZeroGradientModulePixels++;
 			}
@@ -1309,19 +1307,6 @@ Mat negativeTransform(Mat& src)
 	return dst;
 }
 
-Pix* mat8ToPix(cv::Mat* mat8)
-{
-	Pix* pixd = pixCreate(mat8->size().width, mat8->size().height, 8);
-	for (int y = 0; y < mat8->rows; y++)
-	{
-		for (int x = 0; x < mat8->cols; x++)
-		{
-			pixSetPixel(pixd, x, y, (l_uint32)mat8->at<uchar>(y, x));
-		}
-	}
-	return pixd;
-}
-
 Mat basicGlobalThresholding(const Mat& src) {
 	Mat dst = src.clone();
 	int hist[256];
@@ -1401,220 +1386,6 @@ Mat adaptiveThresholding(Mat& src, int blockSize, double c) {
 	return dst;
 }
 
-std::vector<Mat> segmentCharacters(const Mat& plateImage) {
-	std::vector<Mat> characters;
-
-	Mat grayPlate;
-	RGBToGrayscale(plateImage, grayPlate);
-
-	int blockSize = 11;
-	double c = 2.0;
-	Mat thresholded = adaptiveThresholding(grayPlate, blockSize, c);
-	Mat thresholded2;
-	adaptiveThreshold(grayPlate, thresholded2, 255, ADAPTIVE_THRESH_MEAN_C, THRESH_BINARY_INV, 11, 2);
-	if (show) {
-		imshow("Adaptive Threshold", thresholded);
-	}
-	Mat negativeThresholded = negativeTransform(thresholded);
-	if (show) {
-		imshow("Negative Adaptive Threshold", negativeThresholded);
-	}
-	Mat dilatedNegativeThresholded = repeatDilationHorizontal(negativeThresholded, 0);
-	if (show) {
-		imshow("Dilated Negative Adaptive Threshold", dilatedNegativeThresholded);
-	}
-	std::vector<Vec4i> hierarchy;
-	std::vector<std::vector<Point>> contours;
-	findContours(dilatedNegativeThresholded, contours, hierarchy, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
-
-	for (const auto& contour : contours) {
-		if (!contour.empty()) { 
-			double area = contourArea(contour);
-			if (area > 0) { 
-				if (area > 20) { 
-					Rect myBoundingRect = boundingRect(contour);
-					myBoundingRect &= Rect(0, 0, grayPlate.cols, grayPlate.rows);
-					if (myBoundingRect.width > 0 && myBoundingRect.height > 0) { 
-						double aspectRatio = static_cast<double>(myBoundingRect.width) / myBoundingRect.height;
-						if (aspectRatio > 0.2 && aspectRatio < 1.3) {
-							Mat character = grayPlate(myBoundingRect);
-							Mat negativeCharacter = negativeTransform(character);
-							if (show) {
-								imshow("Negative character found", negativeCharacter);
-							}
-							characters.push_back(negativeCharacter);
-						}
-					}
-				}
-			}
-		}
-	}
-	return characters;
-}
-
-//std::vector<Mat> segmentCharacters(const Mat& plateImage) {
-//    std::vector<Mat> characters;
-//    
-//    // Pre-process the image: Convert to grayscale and apply CLAHE for contrast enhancement
-//    Mat grayPlate, claheOutput;
-//    RGBToGrayscale(plateImage, grayPlate);
-//    Ptr<CLAHE> clahe = createCLAHE();
-//    clahe->apply(grayPlate, claheOutput);
-//
-//    // Apply adaptive thresholding with fine-tuned parameters
-//    int blockSize = 15;
-//    double c = 3.0;
-//    Mat thresholded = adaptiveThresholding(claheOutput, blockSize, c);
-//
-//    // Apply morphological operations
-//    Mat morphed;
-//    morphologyEx(thresholded, morphed, MORPH_CLOSE, getStructuringElement(MORPH_RECT, Size(3, 3)));
-//
-//    // Find contours
-//    std::vector<std::vector<Point>> contours;
-//    std::vector<Vec4i> hierarchy;
-//    findContours(morphed, contours, hierarchy, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
-//
-//    for (const auto& contour : contours) {
-//        double area = contourArea(contour);
-//        if (area > 50) { // Adjust area threshold
-//            Rect boundingRectangle = boundingRect(contour);
-//            double aspectRatio = static_cast<double>(boundingRectangle.width) / boundingRectangle.height;
-//            if (aspectRatio > 0.2 && aspectRatio < 1.0) { // Narrow down aspect ratio
-//                Mat character = grayPlate(boundingRectangle);
-//				Mat negativeCharacter = negativeTransform(character);
-//                characters.push_back(negativeCharacter);
-//				if (show) {
-//					imshow("Negative character found", negativeCharacter);
-//				}
-//            }
-//        }
-//    }
-//    return characters;
-//}
-
-//std::vector<Mat> segmentCharacters(const Mat& plateImage) {
-//	std::vector<Mat> characters;
-//
-//	Mat grayPlate;
-//	RGBToGrayscale(plateImage, grayPlate);
-//
-//	// Adaptive thresholding with fine-tuned parameters
-//	Mat thresholded;
-//	adaptiveThreshold(grayPlate, thresholded, 255, ADAPTIVE_THRESH_MEAN_C, THRESH_BINARY_INV, 11, 2);
-//	imshow("Thresholded Plate", thresholded);
-//
-//	// Optional morphological operations
-//	Mat dilated;
-//	morphologyEx(thresholded, dilated, MORPH_DILATE, getStructuringElement(MORPH_RECT, Size(2, 2)));
-//
-//	// Use Connected Components Analysis to find character contours
-//	std::vector<std::vector<Point>> contours;
-//	findContours(dilated, contours, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
-//
-//	for (const auto& contour : contours) {
-//		Rect boundingBox = boundingRect(contour);
-//
-//		// Filter based on character size and aspect ratio
-//		double aspectRatio = static_cast<double>(boundingBox.width) / boundingBox.height;
-//		if (aspectRatio > 0.2 && aspectRatio < 1.2 && boundingBox.height > 15) {
-//			Mat character = thresholded(boundingBox);
-//			characters.push_back(character);
-//			imshow("Character Segment", character);
-//		}
-//	}
-//
-//	return characters;
-//}
-
-void segmentTextRegions(const Mat& img, const std::string& outputFileName) {
-	// Convert the image to grayscale
-	Mat gray;
-	cvtColor(img, gray, COLOR_BGR2GRAY);
-
-	// Perform OTSU thresholding
-	Mat thresh;
-	threshold(gray, thresh, 0, 255, THRESH_BINARY_INV | THRESH_OTSU);
-
-	// Define the kernel for dilation
-	Mat rectKernel = getStructuringElement(MORPH_RECT, Size(18, 18));
-
-	// Apply dilation to the thresholded image
-	Mat dilation;
-	dilate(thresh, dilation, rectKernel);
-
-	// Find contours in the dilated image
-	std::vector<std::vector<Point>> contours;
-	findContours(dilation, contours, RETR_EXTERNAL, CHAIN_APPROX_NONE);
-
-	// Create a copy of the original image for displaying the detected rectangles
-	Mat imgWithRectangles = img.clone();
-
-	// Open the output file to save extracted text regions
-	std::ofstream file(outputFileName);
-	if (!file.is_open()) {
-		std::cerr << "Failed to open the output file." << std::endl;
-		return;
-	}
-	else {
-		std::cout << "File opened successfully." << std::endl;
-	}
-
-	// Write initial message to the file
-	file << "Detected regions:" << std::endl;
-
-	// Loop through each contour to draw rectangles and save the cropped regions
-	for (const auto& cnt : contours) {
-		// Get the bounding box for each contour
-		Rect boundingBox = boundingRect(cnt);
-
-		// Draw a rectangle on the image copy
-		rectangle(imgWithRectangles, boundingBox, Scalar(0, 255, 0), 2);
-
-		// Format the bounding box information and write to file and console
-		file << "Detected region at: x=" << boundingBox.x
-			<< ", y=" << boundingBox.y
-			<< ", width=" << boundingBox.width
-			<< ", height=" << boundingBox.height << std::endl;
-
-		std::cout << "Detected region at: x=" << boundingBox.x
-			<< ", y=" << boundingBox.y
-			<< ", width=" << boundingBox.width
-			<< ", height=" << boundingBox.height << std::endl;
-	}
-
-	file.close();
-
-	// Display the result with rectangles around detected text regions
-	imshow("Detected Text Regions", imgWithRectangles);
-	waitKey(0);
-}
-
-Mat prepareForSegmentation(const Mat& plateImage) {
-	std::vector<Mat> characters;
-
-	Mat grayPlate;
-	RGBToGrayscale(plateImage, grayPlate);
-
-	int blockSize = 11;
-	double c = 2.0;
-	Mat thresholded = adaptiveThresholding(grayPlate, blockSize, c);
-	Mat thresholded2;
-	adaptiveThreshold(grayPlate, thresholded2, 255, ADAPTIVE_THRESH_MEAN_C, THRESH_BINARY_INV, 11, 2);
-	if (show) {
-		imshow("Adaptive Threshold", thresholded);
-	}
-	Mat negativeThresholded = negativeTransform(thresholded);
-	if (show) {
-		imshow("Negative Adaptive Threshold", negativeThresholded);
-	}
-	Mat dilatedNegativeThresholded = repeatDilationHorizontal(negativeThresholded, 0);
-	if (show) {
-		imshow("Dilated Negative Adaptive Threshold", dilatedNegativeThresholded);
-	}
-	return dilatedNegativeThresholded;
-}
-
 Mat findROI(const Mat& img) {
 	Mat hist_vert, hist_hor;
 	// Calculate the sum of intensities along each row
@@ -1672,7 +1443,7 @@ Mat findROI(const Mat& img) {
 	return cropped_img;
 }
 
-Mat extractLicensePlate(const Mat& binary) {
+Mat cutBorders(const Mat& binary, double percentV, double percentH) {
 	// Step 1: Calculate the vertical histogram (sum of non-zero pixels in each column)
 	Mat vertical_hist(1, binary.cols, CV_32S, Scalar(0));
 	for (int col = 0; col < binary.cols; ++col) {
@@ -1682,7 +1453,7 @@ Mat extractLicensePlate(const Mat& binary) {
 	// Step 2: Find left and right boundaries using a threshold
 	double maxVal;
 	minMaxLoc(vertical_hist, nullptr, &maxVal);
-	int thresholdVertically = static_cast<int>(maxVal * 0.2); // 10% of max value to detect white area
+	int thresholdVertically = static_cast<int>(maxVal * percentV); // 10% of max value to detect white area
 
 	int left = -1, right = -1;
 	for (int col = 0; col < vertical_hist.cols; ++col) {
@@ -1701,7 +1472,7 @@ Mat extractLicensePlate(const Mat& binary) {
 	}
 
 	// Step 4: Find top and bottom boundaries using the new threshold
-	int thresholdHorizontally = static_cast<int>(maxVal * 0.1);
+	int thresholdHorizontally = static_cast<int>(maxVal * percentH);
 	int top = -1, bottom = -1;
 	for (int row = 0; row < horizontal_hist.rows; ++row) {
 		if (horizontal_hist.at<int>(row, 0) > thresholdHorizontally) {
@@ -1716,13 +1487,132 @@ Mat extractLicensePlate(const Mat& binary) {
 	if (left != -1 && right != -1 && top != -1 && bottom != -1) {
 		Rect roi(left, top, right - left, bottom - top); // Define the region of interest
 		license_plate = binary(roi); // Crop the image
-		imshow("Extracted License Plate", license_plate); // Show the extracted region
+		//imshow("Extracted License Plate", license_plate); // Show the extracted region
 	}
 	else {
 		printf("License plate boundaries not found!\n");
 	}
 	return license_plate;
 }
+
+//std::vector<Mat> segmentCharacters(const Mat& binary, double percentCharacters, int noise) {
+//	std::vector<Mat> characters;
+//
+//	// Step 1: Calculate the vertical histogram
+//	Mat vertical_hist(1, binary.cols, CV_32S, Scalar(0));
+//	for (int col = 0; col < binary.cols; ++col) {
+//		vertical_hist.at<int>(0, col) = countNonZero(binary.col(col));
+//	}
+//
+//	// Step 2: Determine character boundaries using the histogram
+//	double maxVal;
+//	minMaxLoc(vertical_hist, nullptr, &maxVal);
+//	int threshold = static_cast<int>(maxVal * percentCharacters); // Adjust threshold as needed
+//
+//	bool inCharacter = false;
+//	int start = -1;
+//
+//	for (int col = 0; col < binary.cols; ++col) {
+//		if (vertical_hist.at<int>(0, col) > threshold) {
+//			// Start of a character region
+//			if (!inCharacter) {
+//				inCharacter = true;
+//				start = col;
+//			}
+//		}
+//		else {
+//			// End of a character region
+//			if (inCharacter) {
+//				inCharacter = false;
+//				int end = col;
+//
+//				// Extract the character region
+//				cv::Rect charRect(start, 0, end - start, binary.rows);
+//				cv::Mat character = binary(charRect);
+//
+//				// Optional: Filter by minimum/maximum width
+//				if (character.cols > noise && character.cols < binary.cols / 2) {
+//					characters.push_back(character);
+//				}
+//			}
+//		}
+//	}
+//
+//	// Handle the last character if still inCharacter
+//	if (inCharacter) {
+//		cv::Rect charRect(start, 0, binary.cols - start, binary.rows);
+//		cv::Mat character = binary(charRect);
+//		if (character.cols > noise && character.cols < binary.cols / 2) {
+//			characters.push_back(character);
+//		}
+//	}
+//
+//	return characters;
+//}
+std::vector<Mat> segmentCharacters(const Mat& binary, double percentCharacters, int noise) {
+	std::vector<Mat> characters;
+
+	// Step 1: Calculate the vertical histogram
+	Mat vertical_hist(1, binary.cols, CV_32S, Scalar(0));
+	for (int col = 0; col < binary.cols; ++col) {
+		vertical_hist.at<int>(0, col) = countNonZero(binary.col(col));
+	}
+
+	// Step 2: Smooth the histogram to reduce noise
+	blur(vertical_hist, vertical_hist, Size(5, 1)); // Smooth histogram
+
+	// Step 3: Determine character boundaries using a relaxed threshold
+	double maxVal;
+	minMaxLoc(vertical_hist, nullptr, &maxVal);
+	int threshold = static_cast<int>(maxVal * percentCharacters);
+	int tolerance = 3; // Allow small gaps
+
+	bool inCharacter = false;
+	int start = -1;
+	int gapCount = 0;
+
+	for (int col = 0; col < binary.cols; ++col) {
+		if (vertical_hist.at<int>(0, col) > threshold) {
+			// Start of a character region
+			if (!inCharacter) {
+				inCharacter = true;
+				start = col;
+				gapCount = 0;
+			}
+		}
+		else {
+			// End of a character region with gap tolerance
+			if (inCharacter) {
+				gapCount++;
+				if (gapCount > tolerance) {
+					inCharacter = false;
+					int end = col - gapCount;
+
+					// Extract the character region
+					Rect charRect(start, 0, end - start, binary.rows);
+					Mat character = binary(charRect);
+
+					// Filter by minimum width
+					if (character.cols > noise && character.cols < binary.cols / 2) {
+						characters.push_back(character);
+					}
+				}
+			}
+		}
+	}
+
+	// Handle the last character if still inCharacter
+	if (inCharacter) {
+		Rect charRect(start, 0, binary.cols - start, binary.rows);
+		Mat character = binary(charRect);
+		if (character.cols > noise && character.cols < binary.cols / 2) {
+			characters.push_back(character);
+		}
+	}
+
+	return characters;
+}
+
 
 void segmentationHorizontal(const Mat& binary) {
 	Mat horizontal_hist(binary.rows, 1, CV_32S, Scalar(0));
@@ -1808,109 +1698,6 @@ void segmentationVertical(const Mat& binary) {
 		imshow(window_name, character);
 		//segmentationHorizontal(character);
 	}
-}
-
-
-char recognizeCharacter(const Mat& character) {
-	std::vector<Mat> templates;
-	std::vector<char> characters;
-	std::string pathToChar = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 3 Semester 2/IP/Lab/Project/characters/";
-
-	// Load digit templates (0-9)
-	for (int i = 0; i < 10; ++i) {
-		std::string digitFolder = pathToChar + "digit_" + std::to_string(i) + "/";
-		if (show) {
-			std::cout << "Searching in folder: " << digitFolder << std::endl;
-		}
-		std::vector<cv::String> filenames;
-		cv::glob(digitFolder, filenames, false);
-		if (show) {
-			std::cout << "Found " << filenames.size() << " files." << std::endl;
-		}
-		for (const auto& filename : filenames) {
-			//std::cout << "Filename: " << filename << std::endl;
-			Mat digitTemplate = imread(filename, IMREAD_GRAYSCALE);
-			if (!digitTemplate.empty()) {
-				templates.push_back(digitTemplate);
-				characters.push_back('0' + i);
-				//printf("%d\n", i);
-			}
-			else {
-				printf("Error loading template: %s\n", filename.c_str());
-				return ' '; // Return an empty character if template loading fails
-			}
-		}
-	}
-
-	// Load letter templates (A-Z)
-	for (int i = 0; i < 26; ++i) {
-		char letter = static_cast<char>('A' + i);
-		std::string letterFolder = pathToChar + "letter_" + letter + "/";
-		if (show) {
-			std::cout << "Searching in folder: " << letterFolder << std::endl;
-		}
-		std::vector<cv::String> filenames;
-		cv::glob(letterFolder, filenames, false);
-		if (show) {
-			std::cout << "Found " << filenames.size() << " files." << std::endl;
-		}
-		for (const auto& filename : filenames) {
-			//std::cout << "Filename: " << filename << std::endl;
-			Mat letterTemplate = imread(filename, IMREAD_GRAYSCALE);
-			if (!letterTemplate.empty()) {
-				templates.push_back(letterTemplate);
-				characters.push_back(letter);
-				//printf("%c\n", letter);
-			}
-			else {
-				printf("Error loading template: %s\n", filename.c_str());
-				return ' '; // Return an empty character if template loading fails
-			}
-		}
-	}
-
-	// Calculate similarity between the character and templates
-	double maxSimilarity = -std::numeric_limits<double>::infinity();
-	char recognizedChar = ' ';
-
-	for (size_t i = 0; i < templates.size(); ++i) {
-		double similarity = 0.0;
-		try {
-			Mat resizedCharacter;
-			Size templateSize = templates[i].size();
-			resize(character, resizedCharacter, templateSize);
-			Mat result;
-			matchTemplate(resizedCharacter, templates[i], result, TM_CCORR_NORMED);
-			double minVal, maxVal;
-			Point minLoc, maxLoc;
-			minMaxLoc(result, &minVal, &maxVal, &minLoc, &maxLoc);
-			similarity = maxVal;
-		}
-		catch (const cv::Exception& e) {
-			std::cerr << "Error comparing structural similarity with template " << i << ": " << e.what() << std::endl;
-			continue;
-		}
-
-		if (similarity > maxSimilarity) {
-			maxSimilarity = similarity;
-			recognizedChar = characters[i];
-		}
-	}
-
-	return recognizedChar;
-}
-
-std::string extractText(const Mat& plateImage) {
-	std::vector<Mat> characters = segmentCharacters(plateImage);
-
-	std::string extractedText;
-	for (const auto& character : characters) {
-		char recognizedChar = recognizeCharacter(character);
-		extractedText += recognizedChar;
-	}
-
-	std::cout << "Extracted Text: " << extractedText << std::endl;
-	return extractedText;
 }
 
 std::string getFilenameFromPath(const std::string& filepath) {
@@ -1999,980 +1786,6 @@ void writeResultsToCSV5Columns(const std::string& filename, const std::vector<st
 	outputFile.close();
 }
 
-void processImagesInFolder(const std::string& folderPath, const std::string& csvFilename) {
-	std::vector<std::tuple<std::string, int, int, int, int>> results;
-	std::vector<std::string> files = listFiles(folderPath);
-
-	for (const auto& file : files) {
-		// Display and process image
-		Mat initialImage = imread(file);
-		if (initialImage.empty()) {
-			std::cerr << "Could not open or find the image: " << file << std::endl;
-			continue;
-		}
-		show = true;
-		imshow("Input Image", initialImage);
-		Mat resizedImage;
-		resizeImg(initialImage, resizedImage, 750, true);
-		imshow("Resized Image", resizedImage);
-		Mat grayImage;
-		RGBToGrayscale(resizedImage, grayImage);
-		imshow("Gray Image", grayImage);
-		Mat closedImage = closingGrayscale(grayImage);
-		imshow("Closed Image", closedImage);
-		Mat bilateralFilteredImage = bilateralFilterAlgorithm(closedImage, 5, 15, 15);
-		imshow("Bilateral Filtered Image", bilateralFilteredImage);
-		double k = 0.4;
-		int pH = 50;
-		int pL = (int)k * pH;
-		Mat gauss;
-		Mat cannyImage;
-		GaussianBlur(bilateralFilteredImage, gauss, Size(5, 5), 0.5, 0.5);
-		imshow("Gauss", gauss);
-		Canny(gauss, cannyImage, pL, pH, 3);
-		imshow("Canny", cannyImage);
-		Mat myCannyImage = cannyEdgeDetection(bilateralFilteredImage, 5);
-		imshow("My Canny", myCannyImage);
-		Mat cannyNegative = negativeTransform(myCannyImage);
-		imshow("Negative Canny", cannyNegative);
-		Mat dilatedCanny = repeatDilationCross(cannyNegative, 3);
-		imshow("Dilated Canny", dilatedCanny);
-		Rect plateRect = detectLicensePlate(dilatedCanny, resizedImage);
-		Mat detectedPlate = resizedImage.clone();
-		Mat plateRectMat = dilatedCanny(plateRect);
-		Mat licensePlateImage = detectedPlate(plateRect);
-		if (plateRect.x == 0 && plateRect.y == 0 && plateRect.width == 0 && plateRect.height == 0) {
-			licensePlateImage = initialImage.clone();
-		}
-		imshow("License Plate", licensePlateImage);
-		rectangle(detectedPlate, plateRect, Scalar(0, 255, 0), 2);
-		imshow("Final Detected Plate", detectedPlate);
-
-		waitKey();
-		int userInput;
-		std::cout << "Which was the result: plate detected (1), plate non-detected (2), was detected, but another area was chosen as the final one (3), or entire image given as final result(4)? ";
-		std::cin >> userInput;
-
-		int detectedFinal = (userInput == 1) ? 1 : 0;
-		int nonDetected = (userInput == 2) ? 1 : 0;
-		int detectedNotChosen = (userInput == 3) ? 1 : 0;
-		int entireImageFinal = (userInput == 4) ? 1 : 0;
-
-		results.emplace_back(getFilenameFromPath(file), detectedFinal, nonDetected, detectedNotChosen, entireImageFinal);
-
-		
-	}
-
-	writeResultsToCSV5Columns(csvFilename, results);
-}
-
-void processImagesInFolder2(const std::string& folderPath, const std::string& csvFilename) {
-	std::vector<std::tuple<std::string, int, int, int, int>> results;
-	std::vector<std::string> files = listFiles(folderPath);
-
-	for (const auto& file : files) {
-		// Display and process image
-		Mat initialImage = imread(file);
-		if (initialImage.empty()) {
-			std::cerr << "Could not open or find the image: " << file << std::endl;
-			continue;
-		}
-		show = true;
-		imshow("Input Image", initialImage);
-		Mat resizedImage;
-		resizeImg(initialImage, resizedImage, 750, true);
-		imshow("Resized Image", resizedImage);
-		Mat grayImage;
-		RGBToGrayscale(resizedImage, grayImage);
-		imshow("Gray Image", grayImage);
-		Mat closedImage = closingGrayscale(grayImage);
-		imshow("Closed Image", closedImage);
-		Mat bilateralFilteredImage = bilateralFilterAlgorithm(closedImage, 5, 15, 15);
-		imshow("Bilateral Filtered Image", bilateralFilteredImage);
-		double k = 0.4;
-		int pH = 50;
-		int pL = (int)k * pH;
-		Mat gauss;
-		Mat cannyImage;
-		GaussianBlur(bilateralFilteredImage, gauss, Size(5, 5), 0.5, 0.5);
-		imshow("Gauss", gauss);
-		Canny(gauss, cannyImage, pL, pH, 3);
-		imshow("Canny", cannyImage);
-		Mat cannyNegative = negativeTransform(cannyImage);
-		imshow("Negative Canny", cannyNegative);
-		Mat dilatedCanny = repeatDilationHorizontal(cannyNegative, 3);
-		imshow("Dilated Canny", dilatedCanny);
-		Rect plateRect = detectLicensePlate(dilatedCanny, resizedImage);
-		Mat detectedPlate = resizedImage.clone();
-		Mat plateRectMat = dilatedCanny(plateRect);
-		Mat licensePlateImage = detectedPlate(plateRect);
-		if (plateRect.x == 0 && plateRect.y == 0 && plateRect.width == 0 && plateRect.height == 0) {
-			licensePlateImage = initialImage.clone();
-		}
-		imshow("License Plate", licensePlateImage);
-		rectangle(detectedPlate, plateRect, Scalar(0, 255, 0), 2);
-		imshow("Final Detected Plate", detectedPlate);
-
-		waitKey();
-		int userInput;
-		std::cout << "Which was the result: plate detected (1), plate non-detected (2), was detected, but another area was chosen as the final one (3), or entire image given as final result(4)? ";
-		std::cin >> userInput;
-
-		int detectedFinal = (userInput == 1) ? 1 : 0;
-		int nonDetected = (userInput == 2) ? 1 : 0;
-		int detectedNotChosen = (userInput == 3) ? 1 : 0;
-		int entireImageFinal = (userInput == 4) ? 1 : 0;
-
-		results.emplace_back(getFilenameFromPath(file), detectedFinal, nonDetected, detectedNotChosen, entireImageFinal);
-
-
-	}
-
-	writeResultsToCSV5Columns(csvFilename, results);
-}
-
-
-bool isDirectory(const std::string& path) {
-	DWORD attr = GetFileAttributesA(path.c_str());
-	return (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY));
-}
-
-int case22() {
-	std::string folderPath2 = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 3 Semester 2/IP/Lab/Project/dataset/imagesForTesting/plates";
-	std::string csvFilename2 = "resultsAreaTesseractHorizontal3.csv";
-	processImagesInFolder2(folderPath2, csvFilename2);
-}
-
-int case9() {
-	// Get the directory path from the user
-	std::string directoryPath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 3 Semester 2/IP/Lab/Project/dataset/imagesForTesting/plates";
-	std::string csvFilename = "resultsTesseractHorizontalDilation40.csv";
-	if (!isDirectory(directoryPath)) {
-		std::cerr << "Directory not found: " << directoryPath << std::endl;
-		return -1;
-	}
-
-	// Open a CSV file to store results
-	std::ofstream csvFile(csvFilename);
-	if (!csvFile.is_open()) {
-		std::cerr << "Failed to create CSV file: " << csvFilename << std::endl;
-		return -1;
-	}
-
-	// Write headers to the CSV file
-	csvFile << "Image Name;OCR Output\n";
-	std::vector<std::string> files = listFiles(directoryPath);
-	// Iterate over images in the directory
-	std::vector<std::pair<std::string, std::string>> results;
-	for (const std::string& file : files) {
-		// Load image
-		Mat initialImage = imread(file);
-		if (initialImage.empty()) {
-			std::cerr << "Failed to load image: " << file << std::endl;
-			continue;
-		}
-
-		// Preprocess image (similar to case 101)
-		show = false;
-		Mat resizedImage;
-		resizeImg(initialImage, resizedImage, 750, true);
-		Mat grayImage;
-		RGBToGrayscale(resizedImage, grayImage);
-		Mat closedImage = closingGrayscale(grayImage);
-		Mat bilateralFilteredImage = bilateralFilterAlgorithm(closedImage, 5, 15, 15);
-		double k = 0.4;
-		int pH = 50;
-		int pL = (int)k * pH;
-		Mat gauss;
-		Mat cannyImage;
-		GaussianBlur(bilateralFilteredImage, gauss, Size(5, 5), 0.5, 0.5);
-		Canny(gauss, cannyImage, pL, pH, 3);
-		Mat cannyNegative = negativeTransform(cannyImage);
-		Mat dilatedCanny = repeatDilationHorizontal(cannyNegative, 4);
-		Rect plateRect = detectLicensePlate(dilatedCanny, resizedImage);
-		Mat detectedPlate = resizedImage.clone();
-		Mat plateRectMat = dilatedCanny(plateRect);
-		Mat licensePlateImage = detectedPlate(plateRect);
-		if (plateRect.x == 0 && plateRect.y == 0 && plateRect.width == 0 && plateRect.height == 0) {
-			licensePlateImage = initialImage.clone();
-		}
-		rectangle(detectedPlate, plateRect, Scalar(0, 255, 0), 2);
-
-		tesseract::TessBaseAPI* api = new tesseract::TessBaseAPI();
-		if (api->Init("C:\\Program Files\\Tesseract-OCR\\tessdata", "eng")) {
-			fprintf(stderr, "Could not initialize tesseract.\n");
-			exit(1);
-		}
-
-		Mat grayLicensePlate;
-		RGBToGrayscale(licensePlateImage, grayLicensePlate);
-		Mat thLicense = basicGlobalThresholding(grayLicensePlate);
-		Mat dilatedPlate = repeatDilationHorizontal(thLicense, 0);
-
-		Pix* pixImage = mat8ToPix(&dilatedPlate);
-
-		api->SetImage(pixImage);
-
-		char* outText;
-		outText = api->GetUTF8Text();
-		printf("OCR output:\n%s", outText);
-		std::string text(outText);
-		std::regex pattern("[^a-zA-Z0-9\\s-]");
-		text = std::regex_replace(text, pattern, "");
-		results.emplace_back(file, text);
-
-		api->End();
-		delete[] outText;
-		pixDestroy(&pixImage);
-
-
-	}
-	writeResultsToCSV(csvFilename, results);
-	std::cout << "Results written to " << csvFilename << std::endl;
-	csvFile.close();
-	return 1;
-}
-
-int case10() {
-	std::string directoryPath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 3 Semester 2/IP/Lab/Project/dataset/imagesForTesting/plates";
-	std::string csvFilename = "resultsTesseractVerticalDilation34.csv";
-	if (!isDirectory(directoryPath)) {
-		std::cerr << "Directory not found: " << directoryPath << std::endl;
-		return -1;
-	}
-
-	std::ofstream csvFile(csvFilename);
-	if (!csvFile.is_open()) {
-		std::cerr << "Failed to create CSV file: " << csvFilename << std::endl;
-		return -1;
-	}
-
-	csvFile << "Image Name;OCR Output\n";
-	std::vector<std::string> files = listFiles(directoryPath);
-	std::vector<std::pair<std::string, std::string>> results;
-	for (const std::string& file : files) {
-		Mat initialImage = imread(file);
-		if (initialImage.empty()) {
-			std::cerr << "Failed to load image: " << file << std::endl;
-			continue;
-		}
-
-		show = false;
-		Mat resizedImage;
-		resizeImg(initialImage, resizedImage, 750, true);
-		Mat grayImage;
-		RGBToGrayscale(resizedImage, grayImage);
-		Mat closedImage = closingGrayscale(grayImage);
-		Mat bilateralFilteredImage = bilateralFilterAlgorithm(closedImage, 5, 15, 15);
-		double k = 0.4;
-		int pH = 50;
-		int pL = (int)k * pH;
-		Mat gauss;
-		Mat cannyImage;
-		GaussianBlur(bilateralFilteredImage, gauss, Size(5, 5), 0.5, 0.5);
-		Canny(gauss, cannyImage, pL, pH, 3);
-		Mat cannyNegative = negativeTransform(cannyImage);
-		Mat dilatedCanny = repeatDilationVertical(cannyNegative, 3);
-		Rect plateRect = detectLicensePlate(dilatedCanny, resizedImage);
-		Mat detectedPlate = resizedImage.clone();
-		Mat plateRectMat = dilatedCanny(plateRect);
-		Mat licensePlateImage = detectedPlate(plateRect);
-		if (plateRect.x == 0 && plateRect.y == 0 && plateRect.width == 0 && plateRect.height == 0) {
-			licensePlateImage = initialImage.clone();
-		}
-		rectangle(detectedPlate, plateRect, Scalar(0, 255, 0), 2);
-
-		tesseract::TessBaseAPI* api = new tesseract::TessBaseAPI();
-		if (api->Init("C:\\Program Files\\Tesseract-OCR\\tessdata", "eng")) {
-			fprintf(stderr, "Could not initialize tesseract.\n");
-			exit(1);
-		}
-
-		Mat grayLicensePlate;
-		RGBToGrayscale(licensePlateImage, grayLicensePlate);
-		Mat thLicense = basicGlobalThresholding(grayLicensePlate);
-		Mat dilatedPlate = repeatDilationVertical(thLicense, 4);
-
-		Pix* pixImage = mat8ToPix(&dilatedPlate);
-
-		api->SetImage(pixImage);
-
-		char* outText;
-		outText = api->GetUTF8Text();
-		printf("OCR output:\n%s", outText);
-		std::string text(outText);
-		std::regex pattern("[^a-zA-Z0-9\\s-]");
-		text = std::regex_replace(text, pattern, "");
-		results.emplace_back(file, text);
-
-		api->End();
-		delete[] outText;
-		pixDestroy(&pixImage);
-
-
-	}
-	writeResultsToCSV(csvFilename, results);
-	std::cout << "Results written to " << csvFilename << std::endl;
-	csvFile.close();
-	return 1;
-}
-
-int case11() {
-	std::string directoryPath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 3 Semester 2/IP/Lab/Project/dataset/imagesForTesting/plates";
-	std::string csvFilename = "resultsTesseractCrossDilation30.csv";
-	if (!isDirectory(directoryPath)) {
-		std::cerr << "Directory not found: " << directoryPath << std::endl;
-		return -1;
-	}
-
-	std::ofstream csvFile(csvFilename);
-	if (!csvFile.is_open()) {
-		std::cerr << "Failed to create CSV file: " << csvFilename << std::endl;
-		return -1;
-	}
-
-	csvFile << "Image Name;OCR Output\n";
-	std::vector<std::string> files = listFiles(directoryPath);
-	std::vector<std::pair<std::string, std::string>> results;
-	for (const std::string& file : files) {
-		Mat initialImage = imread(file);
-		if (initialImage.empty()) {
-			std::cerr << "Failed to load image: " << file << std::endl;
-			continue;
-		}
-
-		show = false;
-		Mat resizedImage;
-		resizeImg(initialImage, resizedImage, 750, true);
-		Mat grayImage;
-		RGBToGrayscale(resizedImage, grayImage);
-		Mat closedImage = closingGrayscale(grayImage);
-		Mat bilateralFilteredImage = bilateralFilterAlgorithm(closedImage, 5, 15, 15);
-		double k = 0.4;
-		int pH = 50;
-		int pL = (int)k * pH;
-		Mat gauss;
-		Mat cannyImage;
-		GaussianBlur(bilateralFilteredImage, gauss, Size(5, 5), 0.5, 0.5);
-		Canny(gauss, cannyImage, pL, pH, 3);
-		Mat cannyNegative = negativeTransform(cannyImage);
-		Mat dilatedCanny = repeatDilationCross(cannyNegative, 3);
-		Rect plateRect = detectLicensePlate(dilatedCanny, resizedImage);
-		Mat detectedPlate = resizedImage.clone();
-		Mat plateRectMat = dilatedCanny(plateRect);
-		Mat licensePlateImage = detectedPlate(plateRect);
-		if (plateRect.x == 0 && plateRect.y == 0 && plateRect.width == 0 && plateRect.height == 0) {
-			licensePlateImage = initialImage.clone();
-		}
-		rectangle(detectedPlate, plateRect, Scalar(0, 255, 0), 2);
-
-		tesseract::TessBaseAPI* api = new tesseract::TessBaseAPI();
-		if (api->Init("C:\\Program Files\\Tesseract-OCR\\tessdata", "eng")) {
-			fprintf(stderr, "Could not initialize tesseract.\n");
-			exit(1);
-		}
-
-		Mat grayLicensePlate;
-		RGBToGrayscale(licensePlateImage, grayLicensePlate);
-		Mat thLicense = basicGlobalThresholding(grayLicensePlate);
-		Mat dilatedPlate = repeatDilationCross(thLicense, 0);
-
-		Pix* pixImage = mat8ToPix(&dilatedPlate);
-
-		api->SetImage(pixImage);
-
-		char* outText;
-		outText = api->GetUTF8Text();
-		printf("OCR output:\n%s", outText);
-		std::string text(outText);
-		std::regex pattern("[^a-zA-Z0-9\\s-]");
-		text = std::regex_replace(text, pattern, "");
-		results.emplace_back(file, text);
-
-		api->End();
-		delete[] outText;
-		pixDestroy(&pixImage);
-
-
-	}
-	writeResultsToCSV(csvFilename, results);
-	std::cout << "Results written to " << csvFilename << std::endl;
-	csvFile.close();
-	return 1;
-}
-
-int case12() {
-	std::string directoryPath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 3 Semester 2/IP/Lab/Project/dataset/imagesForTesting/plates";
-	std::string csvFilename = "resultsCannyTesseractHorizontalDilation30.csv";
-	if (!isDirectory(directoryPath)) {
-		std::cerr << "Directory not found: " << directoryPath << std::endl;
-		return -1;
-	}
-
-	std::ofstream csvFile(csvFilename);
-	if (!csvFile.is_open()) {
-		std::cerr << "Failed to create CSV file: " << csvFilename << std::endl;
-		return -1;
-	}
-
-	csvFile << "Image Name;OCR Output\n";
-	std::vector<std::string> files = listFiles(directoryPath);
-	std::vector<std::pair<std::string, std::string>> results;
-	for (const std::string& file : files) {
-		Mat initialImage = imread(file);
-		if (initialImage.empty()) {
-			std::cerr << "Failed to load image: " << file << std::endl;
-			continue;
-		}
-
-		show = false;
-		Mat resizedImage;
-		resizeImg(initialImage, resizedImage, 750, true);
-		Mat grayImage;
-		RGBToGrayscale(resizedImage, grayImage);
-		Mat closedImage = closingGrayscale(grayImage);
-		Mat bilateralFilteredImage = bilateralFilterAlgorithm(closedImage, 5, 15, 15);
-		Mat myCannyImage = cannyEdgeDetection(bilateralFilteredImage, 5);
-		Mat cannyNegative = negativeTransform(myCannyImage);
-		Mat dilatedCanny = repeatDilationHorizontal(cannyNegative, 3);
-		Rect plateRect = detectLicensePlate(dilatedCanny, resizedImage);
-		Mat detectedPlate = resizedImage.clone();
-		Mat plateRectMat = dilatedCanny(plateRect);
-		Mat licensePlateImage = detectedPlate(plateRect);
-		if (plateRect.x == 0 && plateRect.y == 0 && plateRect.width == 0 && plateRect.height == 0) {
-			licensePlateImage = initialImage.clone();
-		}
-		rectangle(detectedPlate, plateRect, Scalar(0, 255, 0), 2);
-
-		tesseract::TessBaseAPI* api = new tesseract::TessBaseAPI();
-		if (api->Init("C:\\Program Files\\Tesseract-OCR\\tessdata", "eng")) {
-			fprintf(stderr, "Could not initialize tesseract.\n");
-			exit(1);
-		}
-
-		Mat grayLicensePlate;
-		RGBToGrayscale(licensePlateImage, grayLicensePlate);
-		Mat thLicense = basicGlobalThresholding(grayLicensePlate);
-		Mat dilatedPlate = repeatDilationHorizontal(thLicense, 0);
-
-		Pix* pixImage = mat8ToPix(&dilatedPlate);
-
-		api->SetImage(pixImage);
-
-		char* outText;
-		outText = api->GetUTF8Text();
-		printf("OCR output:\n%s", outText);
-		std::string text(outText);
-		std::regex pattern("[^a-zA-Z0-9\\s-]");
-		text = std::regex_replace(text, pattern, "");
-		results.emplace_back(file, text);
-
-		api->End();
-		delete[] outText;
-		pixDestroy(&pixImage);
-
-
-	}
-	writeResultsToCSV(csvFilename, results);
-	std::cout << "Results written to " << csvFilename << std::endl;
-	csvFile.close();
-	return 1;
-}
-
-int case13() {
-	std::string directoryPath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 3 Semester 2/IP/Lab/Project/dataset/imagesForTesting/plates";
-	std::string csvFilename = "resultsCannyTesseractVerticalDilation30.csv";
-	if (!isDirectory(directoryPath)) {
-		std::cerr << "Directory not found: " << directoryPath << std::endl;
-		return -1;
-	}
-
-	std::ofstream csvFile(csvFilename);
-	if (!csvFile.is_open()) {
-		std::cerr << "Failed to create CSV file: " << csvFilename << std::endl;
-		return -1;
-	}
-
-	csvFile << "Image Name;OCR Output\n";
-	std::vector<std::string> files = listFiles(directoryPath);
-	std::vector<std::pair<std::string, std::string>> results;
-	for (const std::string& file : files) {
-		Mat initialImage = imread(file);
-		if (initialImage.empty()) {
-			std::cerr << "Failed to load image: " << file << std::endl;
-			continue;
-		}
-
-		show = false;
-		Mat resizedImage;
-		resizeImg(initialImage, resizedImage, 750, true);
-		Mat grayImage;
-		RGBToGrayscale(resizedImage, grayImage);
-		Mat closedImage = closingGrayscale(grayImage);
-		Mat bilateralFilteredImage = bilateralFilterAlgorithm(closedImage, 5, 15, 15);
-		Mat myCannyImage = cannyEdgeDetection(bilateralFilteredImage, 5);
-		Mat cannyNegative = negativeTransform(myCannyImage);
-		Mat dilatedCanny = repeatDilationVertical(cannyNegative, 3);
-		Rect plateRect = detectLicensePlate(dilatedCanny, resizedImage);
-		Mat detectedPlate = resizedImage.clone();
-		Mat plateRectMat = dilatedCanny(plateRect);
-		Mat licensePlateImage = detectedPlate(plateRect);
-		if (plateRect.x == 0 && plateRect.y == 0 && plateRect.width == 0 && plateRect.height == 0) {
-			licensePlateImage = initialImage.clone();
-		}
-		rectangle(detectedPlate, plateRect, Scalar(0, 255, 0), 2);
-
-		tesseract::TessBaseAPI* api = new tesseract::TessBaseAPI();
-		if (api->Init("C:\\Program Files\\Tesseract-OCR\\tessdata", "eng")) {
-			fprintf(stderr, "Could not initialize tesseract.\n");
-			exit(1);
-		}
-
-		Mat grayLicensePlate;
-		RGBToGrayscale(licensePlateImage, grayLicensePlate);
-		Mat thLicense = basicGlobalThresholding(grayLicensePlate);
-		Mat dilatedPlate = repeatDilationVertical(thLicense, 0);
-
-		Pix* pixImage = mat8ToPix(&dilatedPlate);
-
-		api->SetImage(pixImage);
-
-		char* outText;
-		outText = api->GetUTF8Text();
-		printf("OCR output:\n%s", outText);
-		std::string text(outText);
-		std::regex pattern("[^a-zA-Z0-9\\s-]");
-		text = std::regex_replace(text, pattern, "");
-		results.emplace_back(file, text);
-
-		api->End();
-		delete[] outText;
-		pixDestroy(&pixImage);
-	}
-	writeResultsToCSV(csvFilename, results);
-	std::cout << "Results written to " << csvFilename << std::endl;
-	csvFile.close();
-	return 1;
-}
-
-int case14() {
-	std::string directoryPath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 3 Semester 2/IP/Lab/Project/dataset/imagesForTesting/plates";
-	std::string csvFilename = "resultsCannyTesseractCrossDilation30.csv";
-	if (!isDirectory(directoryPath)) {
-		std::cerr << "Directory not found: " << directoryPath << std::endl;
-		return -1;
-	}
-
-	std::ofstream csvFile(csvFilename);
-	if (!csvFile.is_open()) {
-		std::cerr << "Failed to create CSV file: " << csvFilename << std::endl;
-		return -1;
-	}
-
-	csvFile << "Image Name;OCR Output\n";
-	std::vector<std::string> files = listFiles(directoryPath);
-	std::vector<std::pair<std::string, std::string>> results;
-	for (const std::string& file : files) {
-		Mat initialImage = imread(file);
-		if (initialImage.empty()) {
-			std::cerr << "Failed to load image: " << file << std::endl;
-			continue;
-		}
-
-		show = false;
-		Mat resizedImage;
-		resizeImg(initialImage, resizedImage, 750, true);
-		Mat grayImage;
-		RGBToGrayscale(resizedImage, grayImage);
-		Mat closedImage = closingGrayscale(grayImage);
-		Mat bilateralFilteredImage = bilateralFilterAlgorithm(closedImage, 5, 15, 15);
-		Mat myCannyImage = cannyEdgeDetection(bilateralFilteredImage, 5);
-		Mat cannyNegative = negativeTransform(myCannyImage);
-		Mat dilatedCanny = repeatDilationCross(cannyNegative, 3);
-		Rect plateRect = detectLicensePlate(dilatedCanny, resizedImage);
-		Mat detectedPlate = resizedImage.clone();
-		Mat plateRectMat = dilatedCanny(plateRect);
-		Mat licensePlateImage = detectedPlate(plateRect);
-		if (plateRect.x == 0 && plateRect.y == 0 && plateRect.width == 0 && plateRect.height == 0) {
-			licensePlateImage = initialImage.clone();
-		}
-		rectangle(detectedPlate, plateRect, Scalar(0, 255, 0), 2);
-
-		tesseract::TessBaseAPI* api = new tesseract::TessBaseAPI();
-		if (api->Init("C:\\Program Files\\Tesseract-OCR\\tessdata", "eng")) {
-			fprintf(stderr, "Could not initialize tesseract.\n");
-			exit(1);
-		}
-
-		Mat grayLicensePlate;
-		RGBToGrayscale(licensePlateImage, grayLicensePlate);
-		Mat thLicense = basicGlobalThresholding(grayLicensePlate);
-		Mat dilatedPlate = repeatDilationCross(thLicense, 0);
-
-		Pix* pixImage = mat8ToPix(&dilatedPlate);
-
-		api->SetImage(pixImage);
-
-		char* outText;
-		outText = api->GetUTF8Text();
-		printf("OCR output:\n%s", outText);
-		std::string text(outText);
-		std::regex pattern("[^a-zA-Z0-9\\s-]");
-		text = std::regex_replace(text, pattern, "");
-		results.emplace_back(file, text);
-
-		api->End();
-		delete[] outText;
-		pixDestroy(&pixImage);
-	}
-	writeResultsToCSV(csvFilename, results);
-	std::cout << "Results written to " << csvFilename << std::endl;
-	csvFile.close();
-	return 1;
-}
-
-int case15() {
-	std::string directoryPath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 3 Semester 2/IP/Lab/Project/dataset/imagesForTesting/plates";
-	std::string csvFilename = "resultsOCRHorizontalDilation40.csv";
-	if (!isDirectory(directoryPath)) {
-		std::cerr << "Directory not found: " << directoryPath << std::endl;
-		return -1;
-	}
-
-	std::ofstream csvFile(csvFilename);
-	if (!csvFile.is_open()) {
-		std::cerr << "Failed to create CSV file: " << csvFilename << std::endl;
-		return -1;
-	}
-
-	csvFile << "Image Name;OCR Output\n";
-	std::vector<std::string> files = listFiles(directoryPath);
-	std::vector<std::pair<std::string, std::string>> results;
-	for (const std::string& file : files) {
-		Mat initialImage = imread(file);
-		if (initialImage.empty()) {
-			std::cerr << "Failed to load image: " << file << std::endl;
-			continue;
-		}
-
-		show = false;
-		Mat resizedImage;
-		resizeImg(initialImage, resizedImage, 750, true);
-		Mat grayImage;
-		RGBToGrayscale(resizedImage, grayImage);
-		Mat closedImage = closingGrayscale(grayImage);
-		Mat bilateralFilteredImage = bilateralFilterAlgorithm(closedImage, 5, 15, 15);
-		double k = 0.4;
-		int pH = 50;
-		int pL = (int)k * pH;
-		Mat gauss;
-		Mat cannyImage;
-		GaussianBlur(bilateralFilteredImage, gauss, Size(5, 5), 0.5, 0.5);
-		Canny(gauss, cannyImage, pL, pH, 3);
-		Mat cannyNegative = negativeTransform(cannyImage);
-		Mat dilatedCanny = repeatDilationHorizontal(cannyNegative, 4);
-		Rect plateRect = detectLicensePlate(dilatedCanny, resizedImage);
-		Mat detectedPlate = resizedImage.clone();
-		Mat plateRectMat = dilatedCanny(plateRect);
-		Mat licensePlateImage = detectedPlate(plateRect);
-		if (plateRect.x == 0 && plateRect.y == 0 && plateRect.width == 0 && plateRect.height == 0) {
-			licensePlateImage = initialImage.clone();
-		}
-		rectangle(detectedPlate, plateRect, Scalar(0, 255, 0), 2);
-		std::string outText = extractText(detectedPlate);
-		std::string text(outText);
-		std::regex pattern("[^a-zA-Z0-9\\s-]");
-		text = std::regex_replace(text, pattern, "");
-		results.emplace_back(file, text);
-	}
-	writeResultsToCSV(csvFilename, results);
-	std::cout << "Results written to " << csvFilename << std::endl;
-	csvFile.close();
-	return 1;
-}
-
-int case16() {
-	std::string directoryPath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 3 Semester 2/IP/Lab/Project/dataset/imagesForTesting/plates";
-	std::string csvFilename = "resultsOCRVerticalDilation40.csv";
-	if (!isDirectory(directoryPath)) {
-		std::cerr << "Directory not found: " << directoryPath << std::endl;
-		return -1;
-	}
-
-	std::ofstream csvFile(csvFilename);
-	if (!csvFile.is_open()) {
-		std::cerr << "Failed to create CSV file: " << csvFilename << std::endl;
-		return -1;
-	}
-
-	csvFile << "Image Name;OCR Output\n";
-	std::vector<std::string> files = listFiles(directoryPath);
-	std::vector<std::pair<std::string, std::string>> results;
-	for (const std::string& file : files) {
-		Mat initialImage = imread(file);
-		if (initialImage.empty()) {
-			std::cerr << "Failed to load image: " << file << std::endl;
-			continue;
-		}
-
-		show = false;
-		Mat resizedImage;
-		resizeImg(initialImage, resizedImage, 750, true);
-		Mat grayImage;
-		RGBToGrayscale(resizedImage, grayImage);
-		Mat closedImage = closingGrayscale(grayImage);
-		Mat bilateralFilteredImage = bilateralFilterAlgorithm(closedImage, 5, 15, 15);
-		double k = 0.4;
-		int pH = 50;
-		int pL = (int)k * pH;
-		Mat gauss;
-		Mat cannyImage;
-		GaussianBlur(bilateralFilteredImage, gauss, Size(5, 5), 0.5, 0.5);
-		Canny(gauss, cannyImage, pL, pH, 3);
-		Mat cannyNegative = negativeTransform(cannyImage);
-		Mat dilatedCanny = repeatDilationVertical(cannyNegative, 4);
-		Rect plateRect = detectLicensePlate(dilatedCanny, resizedImage);
-		Mat detectedPlate = resizedImage.clone();
-		Mat plateRectMat = dilatedCanny(plateRect);
-		Mat licensePlateImage = detectedPlate(plateRect);
-		if (plateRect.x == 0 && plateRect.y == 0 && plateRect.width == 0 && plateRect.height == 0) {
-			licensePlateImage = initialImage.clone();
-		}
-		rectangle(detectedPlate, plateRect, Scalar(0, 255, 0), 2);
-		std::string outText = extractText(detectedPlate);
-		std::string text(outText);
-		std::regex pattern("[^a-zA-Z0-9\\s-]");
-		text = std::regex_replace(text, pattern, "");
-		results.emplace_back(file, text);
-	}
-	writeResultsToCSV(csvFilename, results);
-	std::cout << "Results written to " << csvFilename << std::endl;
-	csvFile.close();
-	return 1;
-}
-
-int case17() {
-	std::string directoryPath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 3 Semester 2/IP/Lab/Project/dataset/imagesForTesting/plates";
-	std::string csvFilename = "resultsOCRCrossDilation40.csv";
-	if (!isDirectory(directoryPath)) {
-		std::cerr << "Directory not found: " << directoryPath << std::endl;
-		return -1;
-	}
-
-	std::ofstream csvFile(csvFilename);
-	if (!csvFile.is_open()) {
-		std::cerr << "Failed to create CSV file: " << csvFilename << std::endl;
-		return -1;
-	}
-
-	csvFile << "Image Name;OCR Output\n";
-	std::vector<std::string> files = listFiles(directoryPath);
-	std::vector<std::pair<std::string, std::string>> results;
-	for (const std::string& file : files) {
-		Mat initialImage = imread(file);
-		if (initialImage.empty()) {
-			std::cerr << "Failed to load image: " << file << std::endl;
-			continue;
-		}
-
-		show = false;
-		Mat resizedImage;
-		resizeImg(initialImage, resizedImage, 750, true);
-		Mat grayImage;
-		RGBToGrayscale(resizedImage, grayImage);
-		Mat closedImage = closingGrayscale(grayImage);
-		Mat bilateralFilteredImage = bilateralFilterAlgorithm(closedImage, 5, 15, 15);
-		double k = 0.4;
-		int pH = 50;
-		int pL = (int)k * pH;
-		Mat gauss;
-		Mat cannyImage;
-		GaussianBlur(bilateralFilteredImage, gauss, Size(5, 5), 0.5, 0.5);
-		Canny(gauss, cannyImage, pL, pH, 3);
-		Mat cannyNegative = negativeTransform(cannyImage);
-		Mat dilatedCanny = repeatDilationCross(cannyNegative, 4);
-		Rect plateRect = detectLicensePlate(dilatedCanny, resizedImage);
-		Mat detectedPlate = resizedImage.clone();
-		Mat plateRectMat = dilatedCanny(plateRect);
-		Mat licensePlateImage = detectedPlate(plateRect);
-		if (plateRect.x == 0 && plateRect.y == 0 && plateRect.width == 0 && plateRect.height == 0) {
-			licensePlateImage = initialImage.clone();
-		}
-		rectangle(detectedPlate, plateRect, Scalar(0, 255, 0), 2);
-		std::string outText = extractText(detectedPlate);
-		std::string text(outText);
-		std::regex pattern("[^a-zA-Z0-9\\s-]");
-		text = std::regex_replace(text, pattern, "");
-		results.emplace_back(file, text);
-	}
-	writeResultsToCSV(csvFilename, results);
-	std::cout << "Results written to " << csvFilename << std::endl;
-	csvFile.close();
-	return 1;
-}
-
-int case18() {
-	std::string directoryPath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 3 Semester 2/IP/Lab/Project/dataset/imagesForTesting/plates";
-	std::string csvFilename = "resultsCannyOCRHorizontalDilation40.csv";
-	if (!isDirectory(directoryPath)) {
-		std::cerr << "Directory not found: " << directoryPath << std::endl;
-		return -1;
-	}
-
-	std::ofstream csvFile(csvFilename);
-	if (!csvFile.is_open()) {
-		std::cerr << "Failed to create CSV file: " << csvFilename << std::endl;
-		return -1;
-	}
-
-	csvFile << "Image Name;OCR Output\n";
-	std::vector<std::string> files = listFiles(directoryPath);
-	std::vector<std::pair<std::string, std::string>> results;
-	for (const std::string& file : files) {
-		Mat initialImage = imread(file);
-		if (initialImage.empty()) {
-			std::cerr << "Failed to load image: " << file << std::endl;
-			continue;
-		}
-
-		show = false;
-		Mat resizedImage;
-		resizeImg(initialImage, resizedImage, 750, true);
-		Mat grayImage;
-		RGBToGrayscale(resizedImage, grayImage);
-		Mat closedImage = closingGrayscale(grayImage);
-		Mat bilateralFilteredImage = bilateralFilterAlgorithm(closedImage, 5, 15, 15);
-		Mat myCannyImage = cannyEdgeDetection(bilateralFilteredImage, 5);
-		Mat cannyNegative = negativeTransform(myCannyImage);
-		Mat dilatedCanny = repeatDilationHorizontal(cannyNegative, 4);
-		Rect plateRect = detectLicensePlate(dilatedCanny, resizedImage);
-		Mat detectedPlate = resizedImage.clone();
-		Mat plateRectMat = dilatedCanny(plateRect);
-		Mat licensePlateImage = detectedPlate(plateRect);
-		if (plateRect.x == 0 && plateRect.y == 0 && plateRect.width == 0 && plateRect.height == 0) {
-			licensePlateImage = initialImage.clone();
-		}
-		rectangle(detectedPlate, plateRect, Scalar(0, 255, 0), 2);
-		std::string outText = extractText(detectedPlate);
-		std::string text(outText);
-		std::regex pattern("[^a-zA-Z0-9\\s-]");
-		text = std::regex_replace(text, pattern, "");
-		results.emplace_back(file, text);
-	}
-	writeResultsToCSV(csvFilename, results);
-	std::cout << "Results written to " << csvFilename << std::endl;
-	csvFile.close();
-	return 1;
-}
-
-int case19() {
-	std::string directoryPath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 3 Semester 2/IP/Lab/Project/dataset/imagesForTesting/plates";
-	std::string csvFilename = "resultsCannyOCRVerticalDilation40.csv";
-	if (!isDirectory(directoryPath)) {
-		std::cerr << "Directory not found: " << directoryPath << std::endl;
-		return -1;
-	}
-
-	std::ofstream csvFile(csvFilename);
-	if (!csvFile.is_open()) {
-		std::cerr << "Failed to create CSV file: " << csvFilename << std::endl;
-		return -1;
-	}
-
-	csvFile << "Image Name;OCR Output\n";
-	std::vector<std::string> files = listFiles(directoryPath);
-	std::vector<std::pair<std::string, std::string>> results;
-	for (const std::string& file : files) {
-		Mat initialImage = imread(file);
-		if (initialImage.empty()) {
-			std::cerr << "Failed to load image: " << file << std::endl;
-			continue;
-		}
-
-		show = false;
-		Mat resizedImage;
-		resizeImg(initialImage, resizedImage, 750, true);
-		Mat grayImage;
-		RGBToGrayscale(resizedImage, grayImage);
-		Mat closedImage = closingGrayscale(grayImage);
-		Mat bilateralFilteredImage = bilateralFilterAlgorithm(closedImage, 5, 15, 15);
-		Mat myCannyImage = cannyEdgeDetection(bilateralFilteredImage, 5);
-		Mat cannyNegative = negativeTransform(myCannyImage);
-		Mat dilatedCanny = repeatDilationVertical(cannyNegative, 4);
-		Rect plateRect = detectLicensePlate(dilatedCanny, resizedImage);
-		Mat detectedPlate = resizedImage.clone();
-		Mat plateRectMat = dilatedCanny(plateRect);
-		Mat licensePlateImage = detectedPlate(plateRect);
-		if (plateRect.x == 0 && plateRect.y == 0 && plateRect.width == 0 && plateRect.height == 0) {
-			licensePlateImage = initialImage.clone();
-		}
-		rectangle(detectedPlate, plateRect, Scalar(0, 255, 0), 2);
-		std::string outText = extractText(detectedPlate);
-		std::string text(outText);
-		std::regex pattern("[^a-zA-Z0-9\\s-]");
-		text = std::regex_replace(text, pattern, "");
-		results.emplace_back(file, text);
-	}
-	writeResultsToCSV(csvFilename, results);
-	std::cout << "Results written to " << csvFilename << std::endl;
-	csvFile.close();
-	return 1;
-}
-
-int case20() {
-	std::string directoryPath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 3 Semester 2/IP/Lab/Project/dataset/imagesForTesting/plates";
-	std::string csvFilename = "resultsCannyOCRCrossDilation40.csv";
-	if (!isDirectory(directoryPath)) {
-		std::cerr << "Directory not found: " << directoryPath << std::endl;
-		return -1;
-	}
-
-	std::ofstream csvFile(csvFilename);
-	if (!csvFile.is_open()) {
-		std::cerr << "Failed to create CSV file: " << csvFilename << std::endl;
-		return -1;
-	}
-
-	csvFile << "Image Name;OCR Output\n";
-	std::vector<std::string> files = listFiles(directoryPath);
-	std::vector<std::pair<std::string, std::string>> results;
-	for (const std::string& file : files) {
-		Mat initialImage = imread(file);
-		if (initialImage.empty()) {
-			std::cerr << "Failed to load image: " << file << std::endl;
-			continue;
-		}
-
-		show = false;
-		Mat resizedImage;
-		resizeImg(initialImage, resizedImage, 750, true);
-		Mat grayImage;
-		RGBToGrayscale(resizedImage, grayImage);
-		Mat closedImage = closingGrayscale(grayImage);
-		Mat bilateralFilteredImage = bilateralFilterAlgorithm(closedImage, 5, 15, 15);
-		Mat myCannyImage = cannyEdgeDetection(bilateralFilteredImage, 5);
-		Mat cannyNegative = negativeTransform(myCannyImage);
-		Mat dilatedCanny = repeatDilationCross(cannyNegative, 4);
-		Rect plateRect = detectLicensePlate(dilatedCanny, resizedImage);
-		Mat detectedPlate = resizedImage.clone();
-		Mat plateRectMat = dilatedCanny(plateRect);
-		Mat licensePlateImage = detectedPlate(plateRect);
-		if (plateRect.x == 0 && plateRect.y == 0 && plateRect.width == 0 && plateRect.height == 0) {
-			licensePlateImage = initialImage.clone();
-		}
-		rectangle(detectedPlate, plateRect, Scalar(0, 255, 0), 2);
-		std::string outText = extractText(detectedPlate);
-		std::string text(outText);
-		std::regex pattern("[^a-zA-Z0-9\\s-]");
-		text = std::regex_replace(text, pattern, "");
-		results.emplace_back(file, text);
-	}
-	writeResultsToCSV(csvFilename, results);
-	std::cout << "Results written to " << csvFilename << std::endl;
-	csvFile.close();
-	return 1;
-}
-
 int main()
 {
 	cv::utils::logging::setLogLevel(cv::utils::logging::LOG_LEVEL_FATAL);
@@ -2985,30 +1798,7 @@ int main()
 		destroyAllWindows();
 		printf("Menu:\n");
 		//Project
-		printf(" 1 - Car plate recognition showing intermediate steps + my own Canny + Tesseract\n");
-		printf(" 2 - Car plate recognition with result only + my own Canny + Tesseract\n");
-		printf(" 3 - Car plate recognition showing intermediate steps + my own Canny + my own OCR\n");
-		printf(" 4 - Car plate recognition with result + my own Canny + my own OCR\n");
-		printf(" 5 - Car plate recognition showing intermediate steps + Tesseract\n");
-		printf(" 6 - Car plate recognition with result only + Tesseract\n");
-		printf(" 7 - Car plate recognition showing intermediate steps + my own OCR\n");
-		printf(" 8 - Car plate recognition with result only + my own OCR\n");
-		printf(" 9 - Create CSV for testing: resultsTesseractHorizontalXY.csv\n");
-		printf(" 10 - Create CSV for testing: resultsTesseractVerticalXY.csv\n");
-		printf(" 11 - Create CSV for testing: resultsTesseractCrossXY.csv\n");
-		printf(" 12 - Create CSV for testing: resultsCannyTesseractHorizontalXY.csv\n");
-		printf(" 13 - Create CSV for testing: resultsCannyTesseractVerticalXY.csv\n");
-		printf(" 14 - Create CSV for testing: resultsCannyTesseractCrossXY.csv\n");
-		printf(" 15 - Create CSV for testing: resultsOCRHorizontalXY.csv\n");
-		printf(" 16 - Create CSV for testing: resultsOCRVerticalXY.csv\n");
-		printf(" 17 - Create CSV for testing: resultsOCRCrossXY.csv\n");
-		printf(" 18 - Create CSV for testing: resultsCannyOCRHorizontalXY.csv\n");
-		printf(" 19 - Create CSV for testing: resultsCannyOCRVerticalXY.csv\n");
-		printf(" 20 - Create CSV for testing: resultsCannyOCRCrossXY.csv\n");
-		printf(" 21 - Create CSV for testing the area: resultsAreaCannyTesseractCross3Horizontal2.csv\n");
-		printf(" 22 - Create CSV for testing the area: resultsAreaTesseractHorizontal32.csv\n");
-		printf(" 23 - Car plate recognition showing intermediate steps + red detection + Tesseract\n");
-		printf(" 24 - New from segmentation method, for PRS\n");
+		printf(" 1 - New from segmentation method, for PRS\n");
 		printf(" 0 - Exit\n\n");
 		printf("Option: ");
 		scanf("%d", &op);
@@ -3016,6 +1806,26 @@ int main()
 		{
 		case 1:
 			char fname[MAX_PATH];
+			double percentV, percentH, percentCh = 0.0;
+			int d, v, h, ch, noise;
+			printf("Give number of dilations: ");
+			getchar();
+			scanf("%d", &d);
+			printf("Give percent of white for vertically cut of borders: ");
+			getchar();
+			scanf("%d", &v);
+			printf("Give percent of white for horizontally cut of borders: ");
+			getchar();
+			scanf("%d", &h);
+			printf("Give percent for character segmentation: ");
+			getchar();
+			scanf("%d", &ch);
+			printf("Give noise dimension: ");
+			getchar();
+			scanf("%d", &noise);
+			percentV = (double)v / 100.0;
+			percentH = (double)h / 100.0;
+			percentCh = (double)ch / 100.0;
 			while (openFileDlg(fname))
 			{
 				show = true;
@@ -3024,600 +1834,62 @@ int main()
 				Mat resizedImage;
 				resizeImg(initialImage, resizedImage, 750, true);
 				imshow("Resized Image", resizedImage);
+
 				Mat grayImage;
 				RGBToGrayscale(resizedImage, grayImage);
 				imshow("Gray Image", grayImage);
+
 				Mat closedImage = closingGrayscale(grayImage);
 				imshow("Closed Image", closedImage);
+
 				Mat bilateralFilteredImage = bilateralFilterAlgorithm(closedImage, 5, 15, 15);
 				imshow("Bilateral Filtered Image", bilateralFilteredImage);
-				/*double k = 0.4;
+
+				double k = 0.4;
 				int pH = 50;
-				int pL = (int)k * pH;
-				Mat gauss;
-				Mat cannyImage;
+				int pL = static_cast<int>(k * pH);
+				Mat gauss, cannyImage;
 				GaussianBlur(bilateralFilteredImage, gauss, Size(5, 5), 0.5, 0.5);
 				imshow("Gauss", gauss);
+
 				Canny(gauss, cannyImage, pL, pH, 3);
-				imshow("Canny", cannyImage);*/
-				Mat myCannyImage = cannyEdgeDetection(bilateralFilteredImage, 5);
-				imshow("My Canny", myCannyImage);
-				Mat cannyNegative = negativeTransform(myCannyImage);
+				imshow("Canny", cannyImage);
+
+				Mat cannyNegative = negativeTransform(cannyImage);
 				imshow("Negative Canny", cannyNegative);
-				Mat dilatedCanny = repeatDilationCross(cannyNegative, 3);
+
+				Mat dilatedCanny = repeatDilationHorizontal(cannyNegative, 3);
 				imshow("Dilated Canny", dilatedCanny);
+
 				Rect plateRect = detectLicensePlate(dilatedCanny, resizedImage);
 				Mat detectedPlate = resizedImage.clone();
-				Mat plateRectMat = dilatedCanny(plateRect);
 				Mat licensePlateImage = detectedPlate(plateRect);
+
 				if (plateRect.x == 0 && plateRect.y == 0 && plateRect.width == 0 && plateRect.height == 0) {
 					licensePlateImage = initialImage.clone();
 				}
+
 				imshow("License Plate", licensePlateImage);
 				rectangle(detectedPlate, plateRect, Scalar(0, 255, 0), 2);
 				imshow("Final Detected Plate", detectedPlate);
-
-				tesseract::TessBaseAPI* api = new tesseract::TessBaseAPI();
-				if (api->Init("C:\\Program Files\\Tesseract-OCR\\tessdata", "eng")) {
-					fprintf(stderr, "Could not initialize tesseract.\n");
-					exit(1);
-				}
-
 				Mat grayLicensePlate;
 				RGBToGrayscale(licensePlateImage, grayLicensePlate);
 				imshow("Gray License", grayLicensePlate);
 				Mat thLicense = basicGlobalThresholding(grayLicensePlate);
 				imshow("Global Thresholding", thLicense);
-				Mat dilatedPlate = repeatDilationHorizontal(thLicense, 2);
+				Mat dilatedPlate = repeatDilationVertical(thLicense, d);
 				imshow("Dilated Plate", dilatedPlate);
-				Pix* pixImage = mat8ToPix(&dilatedPlate);
-
-				api->SetImage(pixImage);
-
-				char* outText;
-				outText = api->GetUTF8Text();
-				std::string text(outText);
-				std::regex pattern("[^a-zA-Z0-9\\s-]");
-				text = std::regex_replace(text, pattern, "");
-				printf("OCR output:\n%s", text);
-
-				api->End();
-				delete[] outText;
-				pixDestroy(&pixImage);
-
+				Mat roi = cutBorders(dilatedPlate, percentV, percentH);
+				imshow("Cut Borders", roi);
+				std::vector<Mat> characters = segmentCharacters(roi, percentCh, noise);
+				printf("Characters found: %d", characters.size());
+				for (size_t i = 0; i < characters.size(); ++i) {
+					cv::imshow("Character " + std::to_string(i), characters[i]);
+				}
 				waitKey();
 			}
 			break;
-		case 2:
-			while (openFileDlg(fname))
-			{
-				show = false;
-				Mat initialImage = imread(fname);
-				imshow("Input Image", initialImage);
-				Mat resizedImage;
-				resizeImg(initialImage, resizedImage, 750, true);
-				Mat grayImage;
-				RGBToGrayscale(resizedImage, grayImage);
-				Mat closedImage = closingGrayscale(grayImage);
-				Mat bilateralFilteredImage = bilateralFilterAlgorithm(closedImage, 5, 15, 15);
-				/*double k = 0.4;
-				int pH = 50;
-				int pL = (int)k * pH;
-				Mat gauss;
-				Mat cannyImage;
-				GaussianBlur(bilateralFilteredImage, gauss, Size(5, 5), 0.5, 0.5);
-				Canny(gauss, cannyImage, pL, pH, 3);*/
-				Mat myCannyImage = cannyEdgeDetection(bilateralFilteredImage, 5);
-				imshow("My Canny", myCannyImage);
-				Mat cannyNegative = negativeTransform(myCannyImage);
-				Mat dilatedCanny = repeatDilationCross(cannyNegative, 3);
-				Rect plateRect = detectLicensePlate(dilatedCanny, resizedImage);
-				Mat detectedPlate = resizedImage.clone();
-				Mat plateRectMat = dilatedCanny(plateRect);
-				Mat licensePlateImage = detectedPlate(plateRect);
-				if (plateRect.x == 0 && plateRect.y == 0 && plateRect.width == 0 && plateRect.height == 0) {
-					licensePlateImage = initialImage.clone();
-				}
-				rectangle(detectedPlate, plateRect, Scalar(0, 255, 0), 2);
-				imshow("Final Detected Plate", detectedPlate);
-
-				tesseract::TessBaseAPI* api = new tesseract::TessBaseAPI();
-				if (api->Init("C:\\Program Files\\Tesseract-OCR\\tessdata", "eng")) {
-					fprintf(stderr, "Could not initialize tesseract.\n");
-					exit(1);
-				}
-
-				Mat grayLicensePlate;
-				RGBToGrayscale(licensePlateImage, grayLicensePlate);
-				Mat thLicense = basicGlobalThresholding(grayLicensePlate);
-				Mat dilatedPlate = repeatDilationHorizontal(thLicense, 2);
-
-				Pix* pixImage = mat8ToPix(&dilatedPlate);
-
-				api->SetImage(pixImage);
-
-				char* outText;
-				outText = api->GetUTF8Text();
-				std::string text(outText);
-				std::regex pattern("[^a-zA-Z0-9\\s-]");
-				text = std::regex_replace(text, pattern, "");
-				printf("OCR output:\n%s", text);
-
-				api->End();
-				delete[] outText;
-				pixDestroy(&pixImage);
-
-				waitKey();
-			}
-			break;
-		case 3:
-			while (openFileDlg(fname))
-			{
-				show = true;
-				Mat initialImage = imread(fname);
-				imshow("Input Image", initialImage);
-				Mat resizedImage;
-				resizeImg(initialImage, resizedImage, 750, true);
-				imshow("Resized Image", resizedImage);
-				Mat grayImage;
-				RGBToGrayscale(resizedImage, grayImage);
-				imshow("Gray Image", grayImage);
-				Mat closedImage = closingGrayscale(grayImage);
-				imshow("Closed Image", closedImage);
-				Mat bilateralFilteredImage = bilateralFilterAlgorithm(closedImage, 5, 15, 15);
-				imshow("Bilateral Filtered Image", bilateralFilteredImage);
-				/*double k = 0.4;
-				int pH = 50;
-				int pL = (int)k * pH;
-				Mat gauss;
-				Mat cannyImage;
-				GaussianBlur(bilateralFilteredImage, gauss, Size(5, 5), 0.5, 0.5);
-				imshow("Gauss", gauss);
-				Canny(gauss, cannyImage, pL, pH, 3);
-				imshow("Canny", cannyImage);*/
-				Mat myCannyImage = cannyEdgeDetection(bilateralFilteredImage, 5);
-				imshow("My Canny", myCannyImage);
-				Mat cannyNegative = negativeTransform(myCannyImage);
-				imshow("Negative Canny", cannyNegative);
-				Mat dilatedCanny = repeatDilationCross(cannyNegative, 3);
-				imshow("Dilated Canny", dilatedCanny);
-				Rect plateRect = detectLicensePlate(dilatedCanny, resizedImage);
-				Mat detectedPlate = resizedImage.clone();
-				Mat plateRectMat = dilatedCanny(plateRect);
-				Mat licensePlateImage = detectedPlate(plateRect);
-				if (plateRect.x == 0 && plateRect.y == 0 && plateRect.width == 0 && plateRect.height == 0) {
-					licensePlateImage = initialImage.clone();
-				}
-				imshow("License Plate", licensePlateImage);
-				rectangle(detectedPlate, plateRect, Scalar(0, 255, 0), 2);
-				imshow("Final Detected Plate", detectedPlate);
-				extractText(licensePlateImage);
-				waitKey();
-			}
-			break;
-		case 4:
-			while (openFileDlg(fname))
-			{
-				show = false;
-				Mat initialImage = imread(fname);
-				imshow("Input Image", initialImage);
-				Mat resizedImage;
-				resizeImg(initialImage, resizedImage, 750, true);
-				Mat grayImage;
-				RGBToGrayscale(resizedImage, grayImage);
-				Mat closedImage = closingGrayscale(grayImage);
-				Mat bilateralFilteredImage = bilateralFilterAlgorithm(closedImage, 5, 15, 15);
-				/*double k = 0.4;
-				int pH = 50;
-				int pL = (int)k * pH;
-				Mat gauss;
-				Mat cannyImage;
-				GaussianBlur(bilateralFilteredImage, gauss, Size(5, 5), 0.5, 0.5);
-				Canny(gauss, cannyImage, pL, pH, 3);*/
-				Mat myCannyImage = cannyEdgeDetection(bilateralFilteredImage, 5);
-				Mat cannyNegative = negativeTransform(myCannyImage);
-				Mat dilatedCanny = repeatDilationCross(cannyNegative, 3);
-				Rect plateRect = detectLicensePlate(dilatedCanny, resizedImage);
-				Mat detectedPlate = resizedImage.clone();
-				Mat plateRectMat = dilatedCanny(plateRect);
-				Mat licensePlateImage = detectedPlate(plateRect);
-				if (plateRect.x == 0 && plateRect.y == 0 && plateRect.width == 0 && plateRect.height == 0) {
-					licensePlateImage = initialImage.clone();
-				}
-				imshow("License Plate", licensePlateImage);
-				rectangle(detectedPlate, plateRect, Scalar(0, 255, 0), 2);
-				imshow("Final Detected Plate", detectedPlate);
-				extractText(detectedPlate);
-				waitKey();
-			}
-			break;
-		case 5:
-			while (openFileDlg(fname))
-			{
-				show = true;
-				Mat initialImage = imread(fname);
-				imshow("Input Image", initialImage);
-				Mat resizedImage;
-				resizeImg(initialImage, resizedImage, 750, true);
-				imshow("Resized Image", resizedImage);
-				Mat grayImage;
-				RGBToGrayscale(resizedImage, grayImage);
-				imshow("Gray Image", grayImage);
-				Mat closedImage = closingGrayscale(grayImage);
-				imshow("Closed Image", closedImage);
-				Mat bilateralFilteredImage = bilateralFilterAlgorithm(closedImage, 5, 15, 15);
-				imshow("Bilateral Filtered Image", bilateralFilteredImage);
-				double k = 0.4;
-				int pH = 50;
-				int pL = (int)k * pH;
-				Mat gauss;
-				Mat cannyImage;
-				GaussianBlur(bilateralFilteredImage, gauss, Size(5, 5), 0.5, 0.5);
-				imshow("Gauss", gauss);
-				Canny(gauss, cannyImage, pL, pH, 3);
-				imshow("Canny", cannyImage);
-				Mat cannyNegative = negativeTransform(cannyImage);
-				imshow("Negative Canny", cannyNegative);
-				Mat dilatedCanny = repeatDilationVertical(cannyNegative, 4);
-				imshow("Dilated Canny", dilatedCanny);
-				Rect plateRect = detectLicensePlate(dilatedCanny, resizedImage);
-				Mat detectedPlate = resizedImage.clone();
-				Mat plateRectMat = dilatedCanny(plateRect);
-				Mat licensePlateImage = detectedPlate(plateRect);
-				if (plateRect.x == 0 && plateRect.y == 0 && plateRect.width == 0 && plateRect.height == 0) {
-					licensePlateImage = initialImage.clone();
-				}
-				imshow("License Plate", licensePlateImage);
-				rectangle(detectedPlate, plateRect, Scalar(0, 255, 0), 2);
-				imshow("Final Detected Plate", detectedPlate);
-
-				tesseract::TessBaseAPI* api = new tesseract::TessBaseAPI();
-				if (api->Init("C:\\Program Files\\Tesseract-OCR\\tessdata", "eng")) {
-					fprintf(stderr, "Could not initialize tesseract.\n");
-					exit(1);
-				}
-
-				Mat grayLicensePlate;
-				RGBToGrayscale(licensePlateImage, grayLicensePlate);
-				imshow("Gray License", grayLicensePlate);
-				Mat thLicense = basicGlobalThresholding(grayLicensePlate);
-				imshow("Global Thresholding", thLicense);
-				Mat dilatedPlate = repeatDilationVertical(thLicense, 1);
-				imshow("Dilated Plate", dilatedPlate);
-				Pix* pixImage = mat8ToPix(&dilatedPlate);
-
-				api->SetImage(pixImage);
-
-				char* outText;
-				outText = api->GetUTF8Text();
-				std::string text(outText);
-				std::regex pattern("[^a-zA-Z0-9\\s-]");
-				text = std::regex_replace(text, pattern, "");
-				printf("OCR output:\n%s", text);
-
-				api->End();
-				delete[] outText;
-				pixDestroy(&pixImage);
-
-				waitKey();
-			}
-			break;
-		case 6:
-			while (openFileDlg(fname))
-			{
-				show = false;
-				Mat initialImage = imread(fname);
-				imshow("Input Image", initialImage);
-				Mat resizedImage;
-				resizeImg(initialImage, resizedImage, 750, true);
-				Mat grayImage;
-				RGBToGrayscale(resizedImage, grayImage);
-				Mat closedImage = closingGrayscale(grayImage);
-				Mat bilateralFilteredImage = bilateralFilterAlgorithm(closedImage, 5, 15, 15);
-				double k = 0.4;
-				int pH = 50;
-				int pL = (int)k * pH;
-				Mat gauss;
-				Mat cannyImage;
-				GaussianBlur(bilateralFilteredImage, gauss, Size(5, 5), 0.5, 0.5);
-				Canny(gauss, cannyImage, pL, pH, 3);
-				Mat cannyNegative = negativeTransform(cannyImage);
-				Mat dilatedCanny = repeatDilationHorizontal(cannyNegative, 3);
-				Rect plateRect = detectLicensePlate(dilatedCanny, resizedImage);
-				Mat detectedPlate = resizedImage.clone();
-				Mat plateRectMat = dilatedCanny(plateRect);
-				Mat licensePlateImage = detectedPlate(plateRect);
-				if (plateRect.x == 0 && plateRect.y == 0 && plateRect.width == 0 && plateRect.height == 0) {
-					licensePlateImage = initialImage.clone();
-				}
-				rectangle(detectedPlate, plateRect, Scalar(0, 255, 0), 2);
-				imshow("Final Detected Plate", detectedPlate);
-
-				tesseract::TessBaseAPI* api = new tesseract::TessBaseAPI();
-				if (api->Init("C:\\Program Files\\Tesseract-OCR\\tessdata", "eng")) {
-					fprintf(stderr, "Could not initialize tesseract.\n");
-					exit(1);
-				}
-
-				Mat grayLicensePlate;
-				RGBToGrayscale(licensePlateImage, grayLicensePlate);
-				Mat thLicense = basicGlobalThresholding(grayLicensePlate);
-				Mat dilatedPlate = repeatDilationHorizontal(thLicense, 2);
-
-				Pix* pixImage = mat8ToPix(&dilatedPlate);
-
-				api->SetImage(pixImage);
-
-				char* outText;
-				outText = api->GetUTF8Text();
-				std::string text(outText);
-				std::regex pattern("[^a-zA-Z0-9\\s-]");
-				text = std::regex_replace(text, pattern, "");
-				printf("OCR output:\n%s", text);
-
-				api->End();
-				delete[] outText;
-				pixDestroy(&pixImage);
-
-				waitKey();
-			}
-			break;
-		case 7:
-			while (openFileDlg(fname))
-			{
-				show = true;
-				Mat initialImage = imread(fname);
-				imshow("Input Image", initialImage);
-				Mat resizedImage;
-				resizeImg(initialImage, resizedImage, 750, true);
-				imshow("Resized Image", resizedImage);
-				Mat grayImage;
-				RGBToGrayscale(resizedImage, grayImage);
-				imshow("Gray Image", grayImage);
-				Mat closedImage = closingGrayscale(grayImage);
-				imshow("Closed Image", closedImage);
-				Mat bilateralFilteredImage = bilateralFilterAlgorithm(closedImage, 5, 15, 15);
-				imshow("Bilateral Filtered Image", bilateralFilteredImage);
-				double k = 0.4;
-				int pH = 50;
-				int pL = (int)k * pH;
-				Mat gauss;
-				Mat cannyImage;
-				GaussianBlur(bilateralFilteredImage, gauss, Size(5, 5), 0.5, 0.5);
-				imshow("Gauss", gauss);
-				Canny(gauss, cannyImage, pL, pH, 3);
-				imshow("Canny", cannyImage);
-				Mat cannyNegative = negativeTransform(cannyImage);
-				imshow("Negative Canny", cannyNegative);
-				Mat dilatedCanny = repeatDilationHorizontal(cannyNegative, 3);
-				imshow("Dilated Canny", dilatedCanny);
-				Rect plateRect = detectLicensePlate(dilatedCanny, resizedImage);
-				Mat detectedPlate = resizedImage.clone();
-				Mat plateRectMat = dilatedCanny(plateRect);
-				Mat licensePlateImage = detectedPlate(plateRect);
-				if (plateRect.x == 0 && plateRect.y == 0 && plateRect.width == 0 && plateRect.height == 0) {
-					licensePlateImage = initialImage.clone();
-				}
-				imshow("License Plate", licensePlateImage);
-				rectangle(detectedPlate, plateRect, Scalar(0, 255, 0), 2);
-				imshow("Final Detected Plate", detectedPlate);
-				extractText(detectedPlate);
-				waitKey();
-			}
-			break;
-		case 8:
-			while (openFileDlg(fname))
-			{
-				show = false;
-				Mat initialImage = imread(fname);
-				imshow("Input Image", initialImage);
-				Mat resizedImage;
-				resizeImg(initialImage, resizedImage, 750, true);
-				Mat grayImage;
-				RGBToGrayscale(resizedImage, grayImage);
-				Mat closedImage = closingGrayscale(grayImage);
-				Mat bilateralFilteredImage = bilateralFilterAlgorithm(closedImage, 5, 15, 15);
-				double k = 0.4;
-				int pH = 50;
-				int pL = (int)k * pH;
-				Mat gauss;
-				Mat cannyImage;
-				GaussianBlur(bilateralFilteredImage, gauss, Size(5, 5), 0.5, 0.5);
-				Canny(gauss, cannyImage, pL, pH, 3);
-				Mat cannyNegative = negativeTransform(cannyImage);
-				Mat dilatedCanny = repeatDilationHorizontal(cannyNegative, 3);
-				Rect plateRect = detectLicensePlate(dilatedCanny, resizedImage);
-				Mat detectedPlate = resizedImage.clone();
-				Mat plateRectMat = dilatedCanny(plateRect);
-				Mat licensePlateImage = detectedPlate(plateRect);
-				if (plateRect.x == 0 && plateRect.y == 0 && plateRect.width == 0 && plateRect.height == 0) {
-					licensePlateImage = initialImage.clone();
-				}
-				imshow("License Plate", licensePlateImage);
-				rectangle(detectedPlate, plateRect, Scalar(0, 255, 0), 2);
-				imshow("Final Detected Plate", detectedPlate);
-				extractText(detectedPlate);
-				waitKey();
-			}
-			break;
-		case 9:
-			case9();
-			break;
-		case 10:
-			case10();
-			break;
-		case 11:
-			case11();
-			break;
-		case 12:
-			case12();
-			break;
-		case 13:
-			case13();
-			break;
-		case 14:
-			case14();
-			break;
-		case 15:
-			case15();
-			break;
-		case 16:
-			case16();
-			break;
-		case 17:
-			case17();
-			break;
-		case 18:
-			case18();
-			break;
-		case 19:
-			case19();
-			break;
-		case 20:
-			case20();
-			break;
-		case 22:
-			case22();
-			break;
-		case 23:
-			while (openFileDlg(fname))
-			{
-				show = true;
-				Mat initialImage = imread(fname);
-				imshow("Input Image", initialImage);
-				Mat resizedImage;
-				resizeImg(initialImage, resizedImage, 750, true);
-				imshow("Resized Image", resizedImage);
-				Mat grayImage;
-				RGBToGrayscale(resizedImage, grayImage);
-				imshow("Gray Image", grayImage);
-				Mat closedImage = closingGrayscale(grayImage);
-				imshow("Closed Image", closedImage);
-				Mat bilateralFilteredImage = bilateralFilterAlgorithm(closedImage, 5, 15, 15);
-				imshow("Bilateral Filtered Image", bilateralFilteredImage);
-				double k = 0.4;
-				int pH = 50;
-				int pL = (int)k * pH;
-				Mat gauss;
-				Mat cannyImage;
-				GaussianBlur(bilateralFilteredImage, gauss, Size(5, 5), 0.5, 0.5);
-				imshow("Gauss", gauss);
-				Canny(gauss, cannyImage, pL, pH, 3);
-				imshow("Canny", cannyImage);
-				Mat cannyNegative = negativeTransform(cannyImage);
-				imshow("Negative Canny", cannyNegative);
-				Mat dilatedCanny = repeatDilationHorizontal(cannyNegative, 3);
-				imshow("Dilated Canny", dilatedCanny);
-				Rect plateRect = detectLicensePlateWithRedComputation(dilatedCanny, resizedImage);
-				Mat detectedPlate = resizedImage.clone();
-				Mat plateRectMat = dilatedCanny(plateRect);
-				Mat licensePlateImage = detectedPlate(plateRect);
-				if (plateRect.x == 0 && plateRect.y == 0 && plateRect.width == 0 && plateRect.height == 0) {
-					licensePlateImage = initialImage.clone();
-				}
-				imshow("License Plate", licensePlateImage);
-				rectangle(detectedPlate, plateRect, Scalar(0, 255, 0), 2);
-				imshow("Final Detected Plate", detectedPlate);
-
-				tesseract::TessBaseAPI* api = new tesseract::TessBaseAPI();
-				if (api->Init("C:\\Program Files\\Tesseract-OCR\\tessdata", "eng")) {
-					fprintf(stderr, "Could not initialize tesseract.\n");
-					exit(1);
-				}
-
-				Mat grayLicensePlate;
-				RGBToGrayscale(licensePlateImage, grayLicensePlate);
-				imshow("Gray License", grayLicensePlate);
-				Mat thLicense = basicGlobalThresholding(grayLicensePlate);
-				imshow("Global Thresholding", thLicense);
-				Mat dilatedPlate = repeatDilationHorizontal(thLicense, 2);
-				imshow("Dilated Plate", dilatedPlate);
-				Pix* pixImage = mat8ToPix(&dilatedPlate);
-
-				api->SetImage(pixImage);
-
-				char* outText;
-				outText = api->GetUTF8Text();
-				std::string text(outText);
-				std::regex pattern("[^a-zA-Z0-9\\s-]");
-				text = std::regex_replace(text, pattern, "");
-				printf("OCR output:\n%s", text);
-
-				api->End();
-				delete[] outText;
-				pixDestroy(&pixImage);
-
-				waitKey();
-			}
-			break;
-		case 21:
-		{
-			std::string folderPath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 3 Semester 2/IP/Lab/Project/dataset/imagesForTesting/plates";
-			std::string csvFilename = "resultsAreaCannyTesseractCross3Horizontal2.csv";
-			processImagesInFolder(folderPath, csvFilename);
 		}
-			break;
-		case 24: 
-			while (openFileDlg(fname))
-		{
-			show = true;
-			Mat initialImage = imread(fname);
-			imshow("Input Image", initialImage);
-			Mat resizedImage;
-			resizeImg(initialImage, resizedImage, 750, true);
-			imshow("Resized Image", resizedImage);
-
-			Mat grayImage;
-			RGBToGrayscale(resizedImage, grayImage);
-			imshow("Gray Image", grayImage);
-
-			Mat closedImage = closingGrayscale(grayImage);
-			imshow("Closed Image", closedImage);
-
-			Mat bilateralFilteredImage = bilateralFilterAlgorithm(closedImage, 5, 15, 15);
-			imshow("Bilateral Filtered Image", bilateralFilteredImage);
-
-			double k = 0.4;
-			int pH = 50;
-			int pL = static_cast<int>(k * pH);
-			Mat gauss, cannyImage;
-			GaussianBlur(bilateralFilteredImage, gauss, Size(5, 5), 0.5, 0.5);
-			imshow("Gauss", gauss);
-
-			Canny(gauss, cannyImage, pL, pH, 3);
-			imshow("Canny", cannyImage);
-
-			Mat cannyNegative = negativeTransform(cannyImage);
-			imshow("Negative Canny", cannyNegative);
-
-			Mat dilatedCanny = repeatDilationHorizontal(cannyNegative, 3);
-			imshow("Dilated Canny", dilatedCanny);
-
-			Rect plateRect = detectLicensePlate(dilatedCanny, resizedImage);
-			Mat detectedPlate = resizedImage.clone();
-			Mat licensePlateImage = detectedPlate(plateRect);
-
-			if (plateRect.x == 0 && plateRect.y == 0 && plateRect.width == 0 && plateRect.height == 0) {
-				licensePlateImage = initialImage.clone();
-			}
-
-			imshow("License Plate", licensePlateImage);
-			rectangle(detectedPlate, plateRect, Scalar(0, 255, 0), 2);
-			imshow("Final Detected Plate", detectedPlate);
-			Mat grayLicensePlate;
-			RGBToGrayscale(licensePlateImage, grayLicensePlate);
-			imshow("Gray License", grayLicensePlate);
-			Mat thLicense = basicGlobalThresholding(grayLicensePlate);
-			imshow("Global Thresholding", thLicense);
-			Mat dilatedPlate = repeatDilationHorizontal(thLicense, 2);
-			imshow("Dilated Plate", dilatedPlate);
-			Mat roi = extractLicensePlate(dilatedPlate);
-			segmentationVertical(roi);
-
-			waitKey();
-		}
-			   break;
-		}	
 	} while (op != 0);
 	return 0;
 }
