@@ -17,6 +17,7 @@
 #include <fstream>
 #include <filesystem> // For directory operations
 #include <opencv2/opencv.hpp>
+#include <numeric>
 
 using namespace cv;
 //namespace fs = std::filesystem;
@@ -1443,7 +1444,7 @@ Mat findROI(const Mat& img) {
 	return cropped_img;
 }
 
-Mat cutBorders(const Mat& binary, double percentV, double percentH) {
+Mat cutBorders(const Mat& binary, double percentageV, double percentageH) {
 	// Step 1: Calculate the vertical histogram (sum of non-zero pixels in each column)
 	Mat vertical_hist(1, binary.cols, CV_32S, Scalar(0));
 	for (int col = 0; col < binary.cols; ++col) {
@@ -1453,7 +1454,7 @@ Mat cutBorders(const Mat& binary, double percentV, double percentH) {
 	// Step 2: Find left and right boundaries using a threshold
 	double maxVal;
 	minMaxLoc(vertical_hist, nullptr, &maxVal);
-	int thresholdVertically = static_cast<int>(maxVal * percentV); // 10% of max value to detect white area
+	int thresholdVertically = static_cast<int>(maxVal * percentageV); // 10% of max value to detect white area
 
 	int left = -1, right = -1;
 	for (int col = 0; col < vertical_hist.cols; ++col) {
@@ -1472,7 +1473,7 @@ Mat cutBorders(const Mat& binary, double percentV, double percentH) {
 	}
 
 	// Step 4: Find top and bottom boundaries using the new threshold
-	int thresholdHorizontally = static_cast<int>(maxVal * percentH);
+	int thresholdHorizontally = static_cast<int>(maxVal * percentageH);
 	int top = -1, bottom = -1;
 	for (int row = 0; row < horizontal_hist.rows; ++row) {
 		if (horizontal_hist.at<int>(row, 0) > thresholdHorizontally) {
@@ -1495,7 +1496,7 @@ Mat cutBorders(const Mat& binary, double percentV, double percentH) {
 	return license_plate;
 }
 
-//std::vector<Mat> segmentCharacters(const Mat& binary, double percentCharacters, int noise) {
+//std::vector<Mat> segmentCharacters(const Mat& binary, double percentageCharacters, int noise) {
 //	std::vector<Mat> characters;
 //
 //	// Step 1: Calculate the vertical histogram
@@ -1504,13 +1505,18 @@ Mat cutBorders(const Mat& binary, double percentV, double percentH) {
 //		vertical_hist.at<int>(0, col) = countNonZero(binary.col(col));
 //	}
 //
-//	// Step 2: Determine character boundaries using the histogram
+//	// Step 2: Smooth the histogram to reduce noise
+//	blur(vertical_hist, vertical_hist, Size(5, 1)); // Smooth histogram
+//
+//	// Step 3: Determine character boundaries using a relaxed threshold
 //	double maxVal;
 //	minMaxLoc(vertical_hist, nullptr, &maxVal);
-//	int threshold = static_cast<int>(maxVal * percentCharacters); // Adjust threshold as needed
+//	int threshold = static_cast<int>(maxVal * percentageCharacters);
+//	int tolerance = 3; // Allow small gaps
 //
 //	bool inCharacter = false;
 //	int start = -1;
+//	int gapCount = 0;
 //
 //	for (int col = 0; col < binary.cols; ++col) {
 //		if (vertical_hist.at<int>(0, col) > threshold) {
@@ -1518,21 +1524,25 @@ Mat cutBorders(const Mat& binary, double percentV, double percentH) {
 //			if (!inCharacter) {
 //				inCharacter = true;
 //				start = col;
+//				gapCount = 0;
 //			}
 //		}
 //		else {
-//			// End of a character region
+//			// End of a character region with gap tolerance
 //			if (inCharacter) {
-//				inCharacter = false;
-//				int end = col;
+//				gapCount++;
+//				if (gapCount > tolerance) {
+//					inCharacter = false;
+//					int end = col - gapCount;
 //
-//				// Extract the character region
-//				cv::Rect charRect(start, 0, end - start, binary.rows);
-//				cv::Mat character = binary(charRect);
+//					// Extract the character region
+//					Rect charRect(start, 0, end - start, binary.rows);
+//					Mat character = binary(charRect);
 //
-//				// Optional: Filter by minimum/maximum width
-//				if (character.cols > noise && character.cols < binary.cols / 2) {
-//					characters.push_back(character);
+//					// Filter by minimum width
+//					if (character.cols > noise && character.cols < binary.cols / 2) {
+//						characters.push_back(character);
+//					}
 //				}
 //			}
 //		}
@@ -1540,8 +1550,8 @@ Mat cutBorders(const Mat& binary, double percentV, double percentH) {
 //
 //	// Handle the last character if still inCharacter
 //	if (inCharacter) {
-//		cv::Rect charRect(start, 0, binary.cols - start, binary.rows);
-//		cv::Mat character = binary(charRect);
+//		Rect charRect(start, 0, binary.cols - start, binary.rows);
+//		Mat character = binary(charRect);
 //		if (character.cols > noise && character.cols < binary.cols / 2) {
 //			characters.push_back(character);
 //		}
@@ -1549,7 +1559,7 @@ Mat cutBorders(const Mat& binary, double percentV, double percentH) {
 //
 //	return characters;
 //}
-std::vector<Mat> segmentCharacters(const Mat& binary, double percentCharacters, int noise) {
+std::vector<Mat> segmentCharacters(const Mat& binary, double percentageCharacters, int noise) {
 	std::vector<Mat> characters;
 
 	// Step 1: Calculate the vertical histogram
@@ -1559,17 +1569,19 @@ std::vector<Mat> segmentCharacters(const Mat& binary, double percentCharacters, 
 	}
 
 	// Step 2: Smooth the histogram to reduce noise
-	blur(vertical_hist, vertical_hist, Size(5, 1)); // Smooth histogram
+	blur(vertical_hist, vertical_hist, Size(5, 1));
 
-	// Step 3: Determine character boundaries using a relaxed threshold
+	// Step 3: Determine character boundaries using dynamic thresholds
 	double maxVal;
 	minMaxLoc(vertical_hist, nullptr, &maxVal);
-	int threshold = static_cast<int>(maxVal * percentCharacters);
-	int tolerance = 3; // Allow small gaps
+	int threshold = static_cast<int>(maxVal * percentageCharacters);
 
 	bool inCharacter = false;
 	int start = -1;
-	int gapCount = 0;
+
+	// Store gap sizes for dynamic analysis
+	std::vector<int> gapSizes;
+	std::vector<int> charEnds;
 
 	for (int col = 0; col < binary.cols; ++col) {
 		if (vertical_hist.at<int>(0, col) > threshold) {
@@ -1577,25 +1589,27 @@ std::vector<Mat> segmentCharacters(const Mat& binary, double percentCharacters, 
 			if (!inCharacter) {
 				inCharacter = true;
 				start = col;
-				gapCount = 0;
+
+				// Analyze gap size if it's not the first character
+				if (!charEnds.empty()) {
+					gapSizes.push_back(start - charEnds.back());
+				}
 			}
 		}
 		else {
-			// End of a character region with gap tolerance
+			// End of a character region
 			if (inCharacter) {
-				gapCount++;
-				if (gapCount > tolerance) {
-					inCharacter = false;
-					int end = col - gapCount;
+				inCharacter = false;
+				int end = col;
 
-					// Extract the character region
-					Rect charRect(start, 0, end - start, binary.rows);
-					Mat character = binary(charRect);
+				// Extract the character region
+				Rect charRect(start, 0, end - start, binary.rows);
+				Mat character = binary(charRect);
 
-					// Filter by minimum width
-					if (character.cols > noise && character.cols < binary.cols / 2) {
-						characters.push_back(character);
-					}
+				// Filter by minimum width
+				if (character.cols > noise && character.cols < binary.cols / 2) {
+					characters.push_back(character);
+					charEnds.push_back(end);
 				}
 			}
 		}
@@ -1610,8 +1624,298 @@ std::vector<Mat> segmentCharacters(const Mat& binary, double percentCharacters, 
 		}
 	}
 
+	// Step 4: Adjust for irregular spacing
+	if (!gapSizes.empty()) {
+		// Calculate average gap size
+		double averageGap = std::accumulate(gapSizes.begin(), gapSizes.end(), 0.0) / gapSizes.size();
+
+		// Merge characters with gaps smaller than average
+		std::vector<Mat> adjustedCharacters;
+		Mat mergedCharacter;
+		for (size_t i = 0; i < characters.size(); ++i) {
+			if (i > 0 && gapSizes[i - 1] < averageGap / 2) {
+				// Merge with the previous character
+				hconcat(mergedCharacter, characters[i], mergedCharacter);
+			}
+			else {
+				if (!mergedCharacter.empty()) {
+					adjustedCharacters.push_back(mergedCharacter);
+				}
+				mergedCharacter = characters[i];
+			}
+		}
+		if (!mergedCharacter.empty()) {
+			adjustedCharacters.push_back(mergedCharacter);
+		}
+		return adjustedCharacters;
+	}
+
 	return characters;
 }
+
+Mat computeProjections(const Mat& binary_img) {
+	int h = binary_img.rows;
+	int w = binary_img.cols;
+
+	std::vector<int> projectionHoriz(h, 0);
+	std::vector<int> projectionVert(w, 0);
+
+	Mat projection_img(h, w, CV_8UC1, Scalar(255));
+
+	for (int i = 0; i < h; i++) {
+		for (int j = 0; j < w; j++) {
+			if (binary_img.at<uchar>(i, j) == 0) { 
+				projectionHoriz[i]++;
+			}
+		}
+	}
+
+	for (int j = 0; j < w; j++) {
+		for (int i = 0; i < h; i++) {
+			if (binary_img.at<uchar>(i, j) == 0) { 
+				projectionVert[j]++;
+			}
+		}
+	}
+
+	
+	for (int j = 0; j < w; j++) {
+		for (int i = 0; i < projectionVert[j]; i++) {
+			projection_img.at<uchar>(i, j) = 0; 
+		}
+	}
+
+	return projection_img;
+}
+
+//std::vector<Mat> segmentCharactersUsingProj(const Mat& roi, const Mat& projection) {
+//	int h = roi.rows;
+//	int w = roi.cols;
+//
+//	// Create a vector to store the number of black pixels in each column (vertical projection)
+//	std::vector<int> projectionVert(w, 0);
+//
+//	// Fill the projectionVert based on the projection image (we will assume the projection image is binary)
+//	for (int j = 0; j < w; j++) {
+//		for (int i = 0; i < h; i++) {
+//			if (projection.at<uchar>(i, j) == 0) { // Object pixel (black)
+//				projectionVert[j]++;
+//			}
+//		}
+//	}
+//
+//	// Find the left and right boundaries of each character using the vertical projection
+//	std::vector<int> boundaries; // Stores the columns where segments start and end
+//	bool inSegment = false;
+//
+//	for (int j = 0; j < w; j++) {
+//		if (projectionVert[j] > 0 && !inSegment) {
+//			boundaries.push_back(j); // Start of a new character segment
+//			inSegment = true;
+//		}
+//		else if (projectionVert[j] == 0 && inSegment) {
+//			boundaries.push_back(j - 1); // End of the current character segment
+//			inSegment = false;
+//		}
+//	}
+//
+//	// Handle the case where the last segment ends at the rightmost edge
+//	if (inSegment) {
+//		boundaries.push_back(w - 1);
+//	}
+//
+//	// Extract individual characters based on column boundaries
+//	std::vector<Mat> characters;
+//	for (size_t i = 0; i < boundaries.size(); i += 2) {
+//		int startCol = boundaries[i];
+//		int endCol = boundaries[i + 1];
+//
+//		// Extract the character region (columns from startCol to endCol)
+//		Rect charRect(startCol, 0, endCol - startCol + 1, h);  // Character will span the full height
+//		Mat character = roi(charRect).clone(); // Clone to avoid referencing the original
+//		characters.push_back(character);
+//	}
+//
+//	return characters;
+//}
+
+std::vector<Mat> segmentCharactersUsingProj(const Mat& roi, const Mat& projection, double th) {
+	int h = roi.rows;
+	int w = roi.cols;
+
+	// Find the first non-black row (to cut top black margin)
+	int topMarginCut = 0;
+	for (int i = 0; i < h; i++) {
+		int blackPixels = 0;
+		for (int j = 0; j < w; j++) {
+			if (projection.at<uchar>(i, j) == 0) { // Black pixel
+				blackPixels++;
+			}
+		}
+		// If more than 90% of the row is black, it's considered part of the top margin
+		printf("Threshold Black pixels: %f\n", w * 0.9);
+		if (blackPixels < w * th) { // Adjust threshold if necessary (e.g., 90% black pixels)
+			topMarginCut = i+1;
+			printf("Top Margin Cut %d with value of black pixels: %d\n", i, blackPixels);
+			break;
+		}
+	}
+
+	// Now that we have the topMarginCut, we can crop the image and focus on the region of interest (roi)
+	Mat projCropped = projection(Rect(0, topMarginCut, w, h - topMarginCut));
+	imshow("Projection Cropped", projCropped);
+	// Create a vector to store the number of black pixels in each column (vertical projection)
+	std::vector<int> projectionVert(w, 0);
+
+	// Fill the projectionVert based on the projection image (assuming binary projection)
+	for (int j = 0; j < w; j++) {
+		for (int i = 0; i < h - topMarginCut; i++) {
+			if (projCropped.at<uchar>(i, j) == 0) { // Object pixel (black)
+				projectionVert[j]++;
+			}
+		}
+	}
+
+	// Now segment the characters based on the vertical projection
+	std::vector<int> boundaries;
+	bool inSegment = false;
+
+	// Iterate over the vertical projection to find the column boundaries of characters
+	for (int j = 0; j < w; j++) {
+		if (projectionVert[j] > 0 && !inSegment) {
+			boundaries.push_back(j);  // Start of a new character segment
+			inSegment = true;
+		}
+		else if (projectionVert[j] == 0 && inSegment) {
+			boundaries.push_back(j - 1);  // End of the current character segment
+			inSegment = false;
+		}
+	}
+
+	// Check if the last segment extends to the end of the image
+	if (inSegment) {
+		boundaries.push_back(w - 1);
+	}
+
+	// Extract individual characters based on column boundaries
+	std::vector<Mat> characters;
+	for (size_t i = 0; i < boundaries.size(); i += 2) {
+		int startCol = boundaries[i];
+		int endCol = boundaries[i + 1];
+
+		// Define the rectangle for the character
+		Rect charRect(startCol, topMarginCut, endCol - startCol + 1, h - topMarginCut);
+		Mat character = roi(charRect).clone(); // Clone to avoid referencing the original
+		characters.push_back(character);
+	}
+
+	return characters;
+}
+
+
+std::vector<std::vector<Mat>> segmentPlate(const Mat& binary, double percentageGroups, double percentageCharacters, int noise) {
+	std::vector<std::vector<Mat>> groups; // To store characters for each group
+
+	// Step 1: Calculate the vertical histogram
+	Mat vertical_hist(1, binary.cols, CV_32S, Scalar(0));
+	for (int col = 0; col < binary.cols; ++col) {
+		vertical_hist.at<int>(0, col) = countNonZero(binary.col(col));
+	}
+	// Step 2: Smooth the histogram to reduce noise
+	blur(vertical_hist, vertical_hist, Size(7, 1));
+
+	// Step 3: Determine group boundaries using dynamic thresholds
+	double maxVal;
+	minMaxLoc(vertical_hist, nullptr, &maxVal);
+	int groupThreshold = static_cast<int>(maxVal * percentageGroups);
+
+	bool inGroup = false;
+	int startGroup = -1;
+
+	std::vector<Rect> groupRegions;
+
+	for (int col = 0; col < binary.cols; ++col) {
+		if (vertical_hist.at<int>(0, col) > groupThreshold) {
+			if (!inGroup) {
+				inGroup = true;
+				startGroup = col;
+			}
+		}
+		else {
+			if (inGroup) {
+				inGroup = false;
+				int endGroup = col;
+
+				// Save the group region
+				Rect groupRect(startGroup, 0, endGroup - startGroup, binary.rows);
+				if (groupRect.width > noise) { // Filter out small regions
+					groupRegions.push_back(groupRect);
+				}
+			}
+		}
+	}
+
+	// Handle the last group
+	if (inGroup) {
+		Rect groupRect(startGroup, 0, binary.cols - startGroup, binary.rows);
+		if (groupRect.width > noise) {
+			groupRegions.push_back(groupRect);
+		}
+	}
+
+	// Step 4: Character segmentation within each group
+	for (const Rect& groupRect : groupRegions) {
+		Mat group = binary(groupRect);
+		std::vector<Mat> characters;
+
+		// Calculate vertical histogram for the group
+		Mat group_hist(1, group.cols, CV_32S, Scalar(0));
+		for (int col = 0; col < group.cols; ++col) {
+			group_hist.at<int>(0, col) = countNonZero(group.col(col));
+		}
+
+		blur(group_hist, group_hist, Size(3, 1)); // Smooth for character segmentation
+		int charThreshold = static_cast<int>(*std::max_element(group_hist.begin<int>(), group_hist.end<int>()) * percentageCharacters);
+
+		bool inCharacter = false;
+		int startChar = -1;
+
+		for (int col = 0; col < group.cols; ++col) {
+			if (group_hist.at<int>(0, col) > charThreshold) {
+				if (!inCharacter) {
+					inCharacter = true;
+					startChar = col;
+				}
+			}
+			else {
+				if (inCharacter) {
+					inCharacter = false;
+					int endChar = col;
+
+					Rect charRect(startChar, 0, endChar - startChar, group.rows);
+					Mat character = group(charRect);
+					if (character.cols > noise) {
+						characters.push_back(character);
+					}
+				}
+			}
+		}
+
+		// Handle the last character in the group
+		if (inCharacter) {
+			Rect charRect(startChar, 0, group.cols - startChar, group.rows);
+			Mat character = group(charRect);
+			if (character.cols > noise) {
+				characters.push_back(character);
+			}
+		}
+
+		groups.push_back(characters);
+	}
+
+	return groups;
+}
+
 
 
 void segmentationHorizontal(const Mat& binary) {
@@ -1625,7 +1929,7 @@ void segmentationHorizontal(const Mat& binary) {
 	// Define a threshold to detect character regions (20% of the max value)
 	double maxVal;
 	minMaxLoc(horizontal_hist, nullptr, &maxVal);
-	int threshold = static_cast<int>(maxVal * 0.2);
+	int threshold = static_cast<int>(maxVal * 0.1);
 
 	// Detect horizontal boundaries (start and end of character regions)
 	std::vector<std::pair<int, int>> character_boundaries;
@@ -1658,7 +1962,7 @@ void segmentationHorizontal(const Mat& binary) {
 	}
 }
 
-void segmentationVertical(const Mat& binary) {
+void segmentationVertical(const Mat& binary, double percentageCharacters) {
 	Mat vertical_hist(1, binary.cols, CV_32S, Scalar(0));
 	for (int col = 0; col < binary.cols; ++col) {
 		vertical_hist.at<int>(0, col) = countNonZero(binary.col(col));
@@ -1667,7 +1971,7 @@ void segmentationVertical(const Mat& binary) {
 	// Define a threshold to detect character regions (20% of the max value)
 	double maxVal;
 	minMaxLoc(vertical_hist, nullptr, &maxVal);
-	int threshold = static_cast<int>(maxVal * 0.2);
+	int threshold = static_cast<int>(maxVal * percentageCharacters);
 
 	// Detect character boundaries
 	std::vector<std::pair<int, int>> character_boundaries;
@@ -1806,26 +2110,31 @@ int main()
 		{
 		case 1:
 			char fname[MAX_PATH];
-			double percentV, percentH, percentCh = 0.0;
-			int d, v, h, ch, noise;
+			double percentageV, percentageH, percentageG, percentageB = 0.0;
+			int d, v, h, g, b, noise;
 			printf("Give number of dilations: ");
 			getchar();
 			scanf("%d", &d);
-			printf("Give percent of white for vertically cut of borders: ");
+			printf("Give percentage of white for vertically cut of borders: ");
 			getchar();
 			scanf("%d", &v);
-			printf("Give percent of white for horizontally cut of borders: ");
+			printf("Give percentage of white for horizontally cut of borders: ");
 			getchar();
 			scanf("%d", &h);
-			printf("Give percent for character segmentation: ");
+			printf("Give percentage for black pixels threshold: ");
+			getchar();
+			scanf("%d", &b);
+			/*printf("Give percentage for character segmentation: ");
 			getchar();
 			scanf("%d", &ch);
 			printf("Give noise dimension: ");
 			getchar();
-			scanf("%d", &noise);
-			percentV = (double)v / 100.0;
-			percentH = (double)h / 100.0;
-			percentCh = (double)ch / 100.0;
+			scanf("%d", &noise);*/
+			percentageV = (double)v / 100.0;
+			percentageH = (double)h / 100.0;
+			percentageB = (double)b / 100.0;
+			/*percentageCh = (double)ch / 100.0;
+			percentageG = (double)g / 100.0;*/
 			while (openFileDlg(fname))
 			{
 				show = true;
@@ -1879,13 +2188,17 @@ int main()
 				imshow("Global Thresholding", thLicense);
 				Mat dilatedPlate = repeatDilationVertical(thLicense, d);
 				imshow("Dilated Plate", dilatedPlate);
-				Mat roi = cutBorders(dilatedPlate, percentV, percentH);
+
+				Mat roi = cutBorders(dilatedPlate, percentageV, percentageH);
 				imshow("Cut Borders", roi);
-				std::vector<Mat> characters = segmentCharacters(roi, percentCh, noise);
+				Mat projection = computeProjections(roi);
+				imshow("Projection", projection);
+				std::vector<Mat> characters = segmentCharactersUsingProj(roi, projection, percentageB);
 				printf("Characters found: %d", characters.size());
 				for (size_t i = 0; i < characters.size(); ++i) {
-					cv::imshow("Character " + std::to_string(i), characters[i]);
+					imshow("Character " + std::to_string(i), characters[i]);
 				}
+				
 				waitKey();
 			}
 			break;
