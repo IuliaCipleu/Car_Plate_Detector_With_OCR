@@ -15,12 +15,14 @@
 #include <regex>
 #include <iostream>
 #include <fstream>
-#include <filesystem> // For directory operations
 #include <opencv2/opencv.hpp>
 #include <numeric>
 
 using namespace cv;
-//namespace fs = std::filesystem;
+#include <filesystem>
+namespace fs = std::filesystem;
+
+
 
 
 const double MIN_ASPECT_RATIO = 2.5;
@@ -1440,7 +1442,9 @@ Mat findROI(const Mat& img) {
 	Mat cropped_img = img(Rect(left, top, right - left + 1, bottom - top + 1));
 
 	// Display the cropped image
-	imshow("Cropped Image", cropped_img);
+	if (show) {
+		imshow("Cropped Image", cropped_img);
+	}
 	return cropped_img;
 }
 
@@ -1763,7 +1767,9 @@ std::vector<Mat> segmentCharactersUsingProj(const Mat& roi, const Mat& projectio
 
 	// Now that we have the topMarginCut, we can crop the image and focus on the region of interest (roi)
 	Mat projCropped = projection(Rect(0, topMarginCut, w, h - topMarginCut));
-	imshow("Projection Cropped", projCropped);
+	if (show) {
+		imshow("Projection Cropped", projCropped);
+	}
 	// Create a vector to store the number of black pixels in each column (vertical projection)
 	std::vector<int> projectionVert(w, 0);
 
@@ -1958,7 +1964,9 @@ void segmentationHorizontal(const Mat& binary) {
 		// Crop the character region based on row boundaries
 		Mat character = binary(Rect(0, start_row, binary.cols, end_row - start_row));
 		std::string window_name = "(Horizontal) Character " + std::to_string(char_count++);
-		imshow(window_name, character);
+		if (show) {
+			imshow(window_name, character);
+		}
 	}
 }
 
@@ -1999,7 +2007,9 @@ void segmentationVertical(const Mat& binary, double percentageCharacters) {
 		printf("In for of Vertical Segmentation\n");
 		Mat character = binary(Rect(start_col, 0, end_col - start_col, binary.rows));
 		std::string window_name = "(Vertical) Character " + std::to_string(char_count++);
-		imshow(window_name, character);
+		if (show) {
+			imshow(window_name, character);
+		}
 		//segmentationHorizontal(character);
 	}
 }
@@ -2103,12 +2113,14 @@ int main()
 		printf("Menu:\n");
 		//Project
 		printf(" 1 - New from segmentation method, for PRS\n");
+		printf(" 2 - Process all images in a folder\n");
 		printf(" 0 - Exit\n\n");
 		printf("Option: ");
 		scanf("%d", &op);
 		switch (op)
 		{
 		case 1:
+		{
 			char fname[MAX_PATH];
 			double percentageV, percentageH, percentageG, percentageB = 0.0;
 			int d, v, h, g, b, noise;
@@ -2137,6 +2149,19 @@ int main()
 			percentageG = (double)g / 100.0;*/
 			while (openFileDlg(fname))
 			{
+				std::string filePath(fname);
+				std::string basePath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/charactersResulted";
+
+				std::string folderName = filePath.substr(filePath.find_last_of("\\") + 1);
+				folderName = folderName.substr(0, folderName.find_last_of('.'));
+
+				std::string folderPath = basePath + "/" + folderName;
+
+				if (!fs::exists(folderPath))
+				{
+					fs::create_directory(folderPath);
+				}
+
 				show = true;
 				Mat initialImage = imread(fname);
 				imshow("Input Image", initialImage);
@@ -2196,10 +2221,108 @@ int main()
 				std::vector<Mat> characters = segmentCharactersUsingProj(roi, projection, percentageB);
 				printf("Characters found: %d", characters.size());
 				for (size_t i = 0; i < characters.size(); ++i) {
+					std::string characterFilePath = folderPath + "/" + std::to_string(i) + ".png";
+					imwrite(characterFilePath, characters[i]);
 					imshow("Character " + std::to_string(i), characters[i]);
 				}
-				
+
 				waitKey();
+			}
+		}
+			break;
+			case 2:
+			{
+				char folderPath[MAX_PATH] = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/dataset/imagesForTesting/plates";
+				double percentageV, percentageH, percentageG, percentageB = 0.0;
+				int d, v, h, g, b, noise;
+				printf("Give number of dilations: ");
+				getchar();
+				scanf("%d", &d);
+				printf("Give percentage of white for vertically cut of borders: ");
+				getchar();
+				scanf("%d", &v);
+				printf("Give percentage of white for horizontally cut of borders: ");
+				getchar();
+				scanf("%d", &h);
+				printf("Give percentage for black pixels threshold: ");
+				getchar();
+				scanf("%d", &b);
+				/*printf("Give percentage for character segmentation: ");
+				getchar();
+				scanf("%d", &ch);
+				printf("Give noise dimension: ");
+				getchar();
+				scanf("%d", &noise);*/
+				percentageV = (double)v / 100.0;
+				percentageH = (double)h / 100.0;
+				percentageB = (double)b / 100.0;
+				for (const auto& entry : fs::directory_iterator(folderPath))
+				{
+					if (entry.is_regular_file() && (entry.path().extension() == ".png" || entry.path().extension() == ".jpg" || entry.path().extension() == ".jpeg"))
+					{
+						std::string fname = entry.path().string();
+
+						std::string basePath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/charactersResulted";
+
+						std::string fileName = entry.path().filename().string();
+						std::string folderName = fileName.substr(0, fileName.find_last_of('.'));
+
+						std::string folderToSave = basePath + "/" + folderName;
+						if (!fs::exists(folderToSave))
+						{
+							fs::create_directory(folderToSave);
+						}
+						show = false;
+						Mat initialImage = imread(fname);
+						Mat resizedImage;
+						resizeImg(initialImage, resizedImage, 750, true);
+						Mat grayImage;
+						RGBToGrayscale(resizedImage, grayImage);
+
+						Mat closedImage = closingGrayscale(grayImage);
+
+						Mat bilateralFilteredImage = bilateralFilterAlgorithm(closedImage, 5, 15, 15);
+
+						double k = 0.4;
+						int pH = 50;
+						int pL = static_cast<int>(k * pH);
+						Mat gauss, cannyImage;
+						GaussianBlur(bilateralFilteredImage, gauss, Size(5, 5), 0.5, 0.5);
+
+						Canny(gauss, cannyImage, pL, pH, 3);
+
+						Mat cannyNegative = negativeTransform(cannyImage);
+
+						Mat dilatedCanny = repeatDilationHorizontal(cannyNegative, 3);
+
+						Rect plateRect = detectLicensePlate(dilatedCanny, resizedImage);
+						Mat detectedPlate = resizedImage.clone();
+						Mat licensePlateImage = detectedPlate(plateRect);
+
+						if (plateRect.x == 0 && plateRect.y == 0 && plateRect.width == 0 && plateRect.height == 0) {
+							licensePlateImage = initialImage.clone();
+						}
+
+						rectangle(detectedPlate, plateRect, Scalar(0, 255, 0), 2);
+						Mat grayLicensePlate;
+						RGBToGrayscale(licensePlateImage, grayLicensePlate);
+						Mat thLicense = basicGlobalThresholding(grayLicensePlate);
+						Mat dilatedPlate = repeatDilationVertical(thLicense, d);
+					
+						Mat roi = cutBorders(dilatedPlate, percentageV, percentageH);
+						Mat projection = computeProjections(roi);
+						std::vector<Mat> characters = segmentCharactersUsingProj(roi, projection, percentageB);
+						printf("Characters found: %d", characters.size());
+						std::string folderPathStr(folderToSave);
+						for (size_t i = 0; i < characters.size(); ++i) {
+							// Concatenate using std::string
+							std::string characterFilePath = folderPathStr + "/" + std::to_string(i) + ".png";
+							imwrite(characterFilePath, characters[i]);
+						}
+
+						waitKey();
+					}
+				}
 			}
 			break;
 		}
