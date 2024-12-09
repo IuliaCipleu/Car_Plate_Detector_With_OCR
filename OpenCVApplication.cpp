@@ -1742,7 +1742,7 @@ void computeHistograms(const cv::Mat& magnitude, const cv::Mat& angle, int nbins
 void computeHOG(const cv::Mat& image, int cell_size, int block_size, int nbins, std::vector<double>& hog_features) {
 	// Resize the image to 128x64
 	cv::Mat image_resized;
-	cv::resize(image, image_resized, cv::Size(128, 64));
+	cv::resize(image, image_resized, cv::Size(64, 64));
 
 	// Compute gradient magnitude and angle
 	cv::Mat magnitude, angle;
@@ -1753,7 +1753,7 @@ void computeHOG(const cv::Mat& image, int cell_size, int block_size, int nbins, 
 	computeHistograms(magnitude, angle, nbins, cell_size, cell_histograms);
 
 	// Group cells into blocks and normalize histograms (L2-norm)
-	for (size_t i = 0; i < cell_histograms.size() - (block_size - 1) * 8; i++) {
+	for (size_t i = 0; i < cell_histograms.size() - (block_size - 1) * cell_size; i++) {
 		std::vector<double> block_hist;
 
 		// Form a block from adjacent cells
@@ -1909,6 +1909,7 @@ int main()
 		printf(" 2 - Process all images in a folder\n");
 		printf(" 3 - HOG\n");
 		printf(" 4 - Naive Bayes on Characters Dataset\n");
+		printf(" 5 - Naive Bayes and HOG on Characters Dataset\n");
 		printf(" 0 - Exit\n\n");
 		printf("Option: ");
 		scanf("%d", &op);
@@ -2274,7 +2275,12 @@ int main()
 							for (int k = 0; k < classSamples.rows; ++k) {
 								count += (classSamples.at<double>(k, j) == 255 ? 1.0 : 0.0);
 							}
-							likelihood.at<double>(c, j) = (count + 1) / (classCount + 2);  // Apply Laplace smoothing
+							if (count == 0) {
+								likelihood.at<double>(c, j) = (count + 1) / (classCount + C);
+							}
+							else {
+								likelihood.at<double>(c, j) = count / classCount;
+							}
 						}
 
 					}
@@ -2287,15 +2293,15 @@ int main()
 						int trueClass = static_cast<int>(y_test.at<double>(i, 0));
 						int predictedClass = classifyBayes(img, priors, likelihood);
 
-						if (predictedClass == 0 || trueClass == 35)
-						{
+						/*if (predictedClass == 0 || trueClass == 35)
+						{*/
 							confusionMatrix.at<int>(predictedClass, trueClass)++;
 							if (trueClass == predictedClass) correct++;
-						}
+						/*}
 						else {
 							confusionMatrix.at<int>(predictedClass, trueClass+1)++;
 							if (trueClass + 1 == predictedClass) correct++;
-						}
+						}*/
 						
 						total++;
 					}
@@ -2312,6 +2318,158 @@ int main()
 
 		}
 		break;
+		case 5:
+		{
+			std::ofstream result_file("C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/evaluation_results_characters_hog.txt", std::ios::app);
+			if (result_file.is_open()) {
+				result_file << "\n--------------------------------------\n";
+				const int C = 36;
+				const int d = 64 * 64; // Adjust the feature size based on HOG (number of features per image)
+
+				std::vector<Mat> trainImages[C], testImages[C];
+				Mat X, y, X_test, y_test;
+
+				srand(static_cast<unsigned int>(time(0)));
+
+				for (int c = 0; c < C; ++c) {
+					std::string folderName;
+					std::string prefix;
+
+					if (c < 10) {
+						folderName = "digit_" + std::to_string(c);
+						prefix = std::to_string(c);
+					}
+					else {
+						folderName = "letter_" + std::string(1, char('A' + (c - 10)));
+						prefix = std::string(1, char('A' + (c - 10)));
+					}
+
+					std::string folderPath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/characters/" + folderName;
+					std::vector<std::string> filenames;
+					for (int index = 1; ; ++index) {
+						char fname[256];
+						sprintf(fname, "%s/%s_%d.png", folderPath.c_str(), prefix.c_str(), index);
+						Mat img = imread(fname, 0); // Load image in grayscale
+						if (img.empty()) break;
+						filenames.push_back(std::string(fname));
+					}
+
+					std::random_device rd;
+					std::mt19937 g(rd());
+					std::shuffle(filenames.begin(), filenames.end(), g);
+
+					int numTrain = static_cast<int>(filenames.size() * 0.8);
+					int numTest = filenames.size() - numTrain;
+
+					for (int i = 0; i < numTrain; ++i) {
+						Mat img = imread(filenames[i], 0);
+						Mat resized;
+						cv::resize(img, resized, cv::Size(64, 64)); // Resize to fit HOG feature computation
+						trainImages[c].push_back(resized);
+					}
+
+					for (int i = numTrain; i < filenames.size(); ++i) {
+						Mat img = imread(filenames[i], 0);
+						Mat resized;
+						cv::resize(img, resized, cv::Size(64, 64));
+						testImages[c].push_back(resized);
+					}
+				}
+
+				int totalTrainSamples = 0, totalTestSamples = 0;
+				for (int c = 0; c < C; ++c) {
+					totalTrainSamples += trainImages[c].size();
+					totalTestSamples += testImages[c].size();
+				}
+
+				X = Mat(totalTrainSamples, 2016, CV_64FC1);
+				y = Mat(totalTrainSamples, 1, CV_64FC1);
+				X_test = Mat(totalTestSamples, 2016, CV_64FC1);
+				y_test = Mat(totalTestSamples, 1, CV_64FC1);
+
+				int trainIndex = 0;
+				for (int c = 0; c < C; ++c) {
+					for (size_t i = 0; i < trainImages[c].size(); ++i) {
+						// Compute HOG features for the training images
+						std::vector<double> hog_features;
+						computeHOG(trainImages[c][i], 8, 2, 9, hog_features);  // Example: 8x8 cells, 2x2 blocks, 9 bins
+						//result_file << "HOG feature size: " << hog_features.size() << std::endl;
+						if (hog_features.empty()) {
+							result_file << "Error: HOG feature vector is empty!" << std::endl;
+							continue; // Skip this image if features are not computed
+						}
+						Mat hog_mat(hog_features);
+						hog_mat = hog_mat.reshape(1, 1); // Flatten the feature vector
+						hog_mat.convertTo(hog_mat, CV_64FC1);
+						try {
+							hog_mat.copyTo(X.row(trainIndex));
+						}
+						catch (const cv::Exception& e) {
+							result_file << "OpenCV exception: " << e.what() << std::endl;
+						}
+
+						y.at<double>(trainIndex, 0) = c;
+						trainIndex++;
+					}
+				}
+
+				int testIndex = 0;
+				for (int c = 0; c < C; ++c) {
+					for (size_t i = 0; i < testImages[c].size(); ++i) {
+						// Compute HOG features for the test images
+						std::vector<double> hog_features;
+						computeHOG(testImages[c][i], 8, 2, 9, hog_features);
+						Mat hog_mat(hog_features);
+						hog_mat = hog_mat.reshape(1, 1); // Flatten the feature vector
+						hog_mat.convertTo(hog_mat, CV_64FC1);
+						hog_mat.copyTo(X_test.row(testIndex));
+						y_test.at<double>(testIndex, 0) = c;
+						testIndex++;
+					}
+				}
+
+				Mat priors(C, 1, CV_64FC1);
+				Mat likelihood(C, d, CV_64FC1, Scalar(1));
+
+				for (int c = 0; c < C; ++c) {
+					Mat classSamples = X.rowRange(trainIndex * c / C, trainIndex * (c + 1) / C);
+					int classCount = classSamples.rows;
+
+					priors.at<double>(c, 0) = static_cast<double>(classCount) / totalTrainSamples;
+
+					for (int j = 0; j < 2016; ++j) {
+						double count = 0.0;
+						for (int k = 0; k < classSamples.rows; ++k) {
+							count += (classSamples.at<double>(k, j) == 255 ? 1.0 : 0.0);
+						}
+						likelihood.at<double>(c, j) = (count == 0) ? (count + 1) / (classCount + C) : count / classCount;
+					}
+				}
+
+				int correct = 0, total = 0;
+				Mat confusionMatrix = Mat::zeros(C, C, CV_32S);
+
+				for (int i = 0; i < X_test.rows; ++i) {
+					Mat img = X_test.row(i).reshape(1, 2016);
+					int trueClass = static_cast<int>(y_test.at<double>(i, 0));
+					int predictedClass = classifyBayes(img, priors, likelihood);
+
+					confusionMatrix.at<int>(predictedClass, trueClass)++;
+					if (trueClass == predictedClass) correct++;
+					total++;
+				}
+
+				double errorRate = 1.0 - (double)correct / total;
+
+				result_file << "Train size: " << totalTrainSamples << std::endl;
+				result_file << "Test size: " << totalTestSamples << std::endl;
+				result_file << "Error Rate: " << errorRate << std::endl;
+				result_file << "Confusion Matrix: " << std::endl << confusionMatrix << std::endl;
+			}
+			result_file.close();
+		}
+		break;
+
 		}
 	} while (op != 0);
 	return 0;
