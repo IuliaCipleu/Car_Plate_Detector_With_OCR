@@ -15,8 +15,11 @@
 #include <regex>
 #include <iostream>
 #include <fstream>
-#include <opencv2/opencv.hpp>
 #include <numeric>
+#include <ctime>
+#include <cstdlib>
+#include <algorithm>  
+#include <random>
 
 using namespace cv;
 #include <filesystem>
@@ -648,7 +651,7 @@ Mat generalFilterSpatialDomain(const Mat& src, Mat& kernel) {
 
 Mat gaussianFilterDecomposition(Mat& src, int w, Mat& intermediate) {
 	Mat Gx = Mat(w, 1, CV_32FC1);
-	Mat Gy = Mat(1, w, CV_32FC1);;
+	Mat Gy = Mat(1, w, CV_32FC1);
 	float sigma = (float)w / 6;
 	for (int i = 0; i < w; i++) {
 		Gx.at<float>(i, 0) = (float)(1 / sqrt(2 * PI) * sigma) * exp((-1) * (i - w / 2) * (i - w / 2) / (2 * sigma * sigma));
@@ -1509,7 +1512,7 @@ Mat computeProjections(const Mat& binary_img) {
 
 	for (int i = 0; i < h; i++) {
 		for (int j = 0; j < w; j++) {
-			if (binary_img.at<uchar>(i, j) == 0) { 
+			if (binary_img.at<uchar>(i, j) == 0) {
 				projectionHoriz[i]++;
 			}
 		}
@@ -1517,16 +1520,16 @@ Mat computeProjections(const Mat& binary_img) {
 
 	for (int j = 0; j < w; j++) {
 		for (int i = 0; i < h; i++) {
-			if (binary_img.at<uchar>(i, j) == 0) { 
+			if (binary_img.at<uchar>(i, j) == 0) {
 				projectionVert[j]++;
 			}
 		}
 	}
 
-	
+
 	for (int j = 0; j < w; j++) {
 		for (int i = 0; i < projectionVert[j]; i++) {
-			projection_img.at<uchar>(i, j) = 0; 
+			projection_img.at<uchar>(i, j) = 0;
 		}
 	}
 
@@ -1562,7 +1565,7 @@ std::vector<Mat> segmentCharactersUsingProj(const Mat& roi, const Mat& projectio
 		// If more than 90% of the row is black, it's considered part of the top margin
 		printf("Threshold Black pixels: %f\n", w * 0.9);
 		if (blackPixels < w * thresholdProj) { // Adjust threshold if necessary (e.g., 90% black pixels)
-			topMarginCut = i+1;
+			topMarginCut = i + 1;
 			printf("Top Margin Cut %d with value of black pixels: %d\n", i, blackPixels);
 			break;
 		}
@@ -1625,33 +1628,32 @@ std::vector<Mat> segmentCharactersUsingProj(const Mat& roi, const Mat& projectio
 }
 
 int classifyBayes(Mat img, Mat priors, Mat likelihood) {
-	//Mat binarized = binaryThreshold(img);;
-	////threshold(img, binarized, 128, 1, THRESH_BINARY);
-	/*Mat flat = binarized.reshape(1, 1);
-	flat.convertTo(flat, CV_64FC1);*/
 	Mat flat = img.reshape(1, 1);
 	double maxLogPosterior = -DBL_MAX;
 	int bestClass = -1;
 
 	std::vector<double> logPosteriors(priors.rows, 0.0);
 
-	std::ofstream log_file("C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/log.txt", std::ios::trunc);
+	std::ofstream log_file("C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/log_bayes.txt", std::ios::trunc);
 	if (log_file.is_open()) {
 		log_file << "New Run: Log Posterior Values and Probabilities\n";
 		log_file << "--------------------------------------\n";
+		log_file << "Flat dimensions: " << flat.size() << std::endl;
+		log_file << "Likelihood dimensions: " << likelihood.size() << std::endl;
 		log_file.close();
 	}
-	log_file.open("C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/log.txt", std::ios::app);
+	log_file.open("C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/log_bayes.txt", std::ios::app);
 	if (log_file.is_open()) {
 		log_file << "Priors rows: " << priors.rows << std::endl;
+		double epsilon = 1e-10;
 		for (int c = 0; c < priors.rows; c++) {
 			double logPosterior = log(priors.at<double>(c, 0));
 			for (int j = 0; j < flat.cols; j++) {
 				if (flat.at<double>(0, j) == 0) {
-					logPosterior += log(1.0 - likelihood.at<double>(c, j));
+					logPosterior += log(1.0 - likelihood.at<double>(c, j) + epsilon);
 				}
 				else {
-					logPosterior += log(likelihood.at<double>(c, j));
+					logPosterior += log(likelihood.at<double>(c, j) + epsilon);
 					//log_file << "Flat at " << j << " = " << flat.at<double>(0, j) << std::endl;
 				}
 			}
@@ -1775,6 +1777,36 @@ void computeHOG(const cv::Mat& image, int cell_size, int block_size, int nbins, 
 	}
 }
 
+Mat invertedBW(const Mat& src) {
+	Mat dst = src.clone();
+	for (int i = 0; i < src.rows; i++) {
+		for (int j = 0; j < src.cols; j++) {
+			if (src.at<uchar>(i, j) == 0) {
+				dst.at<uchar>(i, j) = 255;
+			}
+			else {
+				dst.at<uchar>(i, j) = 0;
+			}
+		}
+	}
+	return dst;
+}
+
+Mat binaryThreshold(Mat src) {
+	Mat dst = src.clone();
+	for (int i = 0; i < src.rows; i++) {
+		for (int j = 0; j < src.cols; j++) {
+			if (src.at<uchar>(i, j) < 128) {
+				dst.at<uchar>(i, j) = 0;
+			}
+			else {
+				dst.at<uchar>(i, j) = 255;
+			}
+		}
+	}
+	return dst;
+}
+
 std::string getFilenameFromPath(const std::string& filepath) {
 	// Find the position of the last occurrence of '/'
 	size_t pos = filepath.find_last_of("/");
@@ -1876,6 +1908,7 @@ int main()
 		printf(" 1 - New from segmentation method, for PRS\n");
 		printf(" 2 - Process all images in a folder\n");
 		printf(" 3 - HOG\n");
+		printf(" 4 - Naive Bayes on Characters Dataset\n");
 		printf(" 0 - Exit\n\n");
 		printf("Option: ");
 		scanf("%d", &op);
@@ -1991,132 +2024,294 @@ int main()
 				waitKey();
 			}
 		}
-			break;
-			case 2:
+		break;
+		case 2:
+		{
+			char folderPath[MAX_PATH] = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/dataset/imagesForTesting/plates";
+			double percentageV, percentageH, percentageG, percentageB, percentageCh = 0.0;
+			int d, v, h, g, b, ch;
+			printf("Give number of dilations: ");
+			getchar();
+			scanf("%d", &d);
+			printf("Give percentage of white for vertically cut of borders: ");
+			getchar();
+			scanf("%d", &v);
+			printf("Give percentage of white for horizontally cut of borders: ");
+			getchar();
+			scanf("%d", &h);
+			printf("Give percentage for black pixels threshold: ");
+			getchar();
+			scanf("%d", &b);
+			printf("Give percentage for black pixels threshold in character image: ");
+			getchar();
+			scanf("%d", &ch);
+			percentageV = (double)v / 100.0;
+			percentageH = (double)h / 100.0;
+			percentageB = (double)b / 100.0;
+			percentageCh = (double)ch / 100.0;
+			for (const auto& entry : fs::directory_iterator(folderPath))
 			{
-				char folderPath[MAX_PATH] = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/dataset/imagesForTesting/plates";
-				double percentageV, percentageH, percentageG, percentageB, percentageCh = 0.0;
-				int d, v, h, g, b, ch;
-				printf("Give number of dilations: ");
-				getchar();
-				scanf("%d", &d);
-				printf("Give percentage of white for vertically cut of borders: ");
-				getchar();
-				scanf("%d", &v);
-				printf("Give percentage of white for horizontally cut of borders: ");
-				getchar();
-				scanf("%d", &h);
-				printf("Give percentage for black pixels threshold: ");
-				getchar();
-				scanf("%d", &b);
-				printf("Give percentage for black pixels threshold in character image: ");
-				getchar();
-				scanf("%d", &ch);
-				percentageV = (double)v / 100.0;
-				percentageH = (double)h / 100.0;
-				percentageB = (double)b / 100.0;
-				percentageCh = (double)ch / 100.0;
-				for (const auto& entry : fs::directory_iterator(folderPath))
+				if (entry.is_regular_file() && (entry.path().extension() == ".png" || entry.path().extension() == ".jpg" || entry.path().extension() == ".jpeg"))
 				{
-					if (entry.is_regular_file() && (entry.path().extension() == ".png" || entry.path().extension() == ".jpg" || entry.path().extension() == ".jpeg"))
+					std::string fname = entry.path().string();
+
+					std::string basePath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/charactersResulted";
+
+					std::string fileName = entry.path().filename().string();
+					std::string folderName = fileName.substr(0, fileName.find_last_of('.'));
+
+					std::string folderToSave = basePath + "/" + folderName;
+					if (!fs::exists(folderToSave))
 					{
-						std::string fname = entry.path().string();
-
-						std::string basePath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/charactersResulted";
-
-						std::string fileName = entry.path().filename().string();
-						std::string folderName = fileName.substr(0, fileName.find_last_of('.'));
-
-						std::string folderToSave = basePath + "/" + folderName;
-						if (!fs::exists(folderToSave))
-						{
-							fs::create_directory(folderToSave);
-						}
-						show = false;
-						Mat initialImage = imread(fname);
-						Mat resizedImage;
-						resizeImg(initialImage, resizedImage, 750, true);
-						Mat grayImage;
-						RGBToGrayscale(resizedImage, grayImage);
-
-						Mat closedImage = closingGrayscale(grayImage);
-
-						Mat bilateralFilteredImage = bilateralFilterAlgorithm(closedImage, 5, 15, 15);
-
-						double k = 0.4;
-						int pH = 50;
-						int pL = static_cast<int>(k * pH);
-						Mat gauss, cannyImage;
-						GaussianBlur(bilateralFilteredImage, gauss, Size(5, 5), 0.5, 0.5);
-
-						Canny(gauss, cannyImage, pL, pH, 3);
-
-						Mat cannyNegative = negativeTransform(cannyImage);
-
-						Mat dilatedCanny = repeatDilationHorizontal(cannyNegative, 3);
-
-						Rect plateRect = detectLicensePlate(dilatedCanny, resizedImage);
-						Mat detectedPlate = resizedImage.clone();
-						Mat licensePlateImage = detectedPlate(plateRect);
-
-						if (plateRect.x == 0 && plateRect.y == 0 && plateRect.width == 0 && plateRect.height == 0) {
-							licensePlateImage = initialImage.clone();
-						}
-
-						rectangle(detectedPlate, plateRect, Scalar(0, 255, 0), 2);
-						Mat grayLicensePlate;
-						RGBToGrayscale(licensePlateImage, grayLicensePlate);
-						Mat thLicense = basicGlobalThresholding(grayLicensePlate);
-						Mat dilatedPlate = repeatDilationVertical(thLicense, d);
-					
-						Mat roi = cutBorders(dilatedPlate, percentageV, percentageH);
-						Mat projection = computeProjections(roi);
-						std::vector<Mat> characters = segmentCharactersUsingProj(roi, projection, percentageB, percentageCh);
-						printf("Characters found: %d", characters.size());
-						std::string folderPathStr(folderToSave);
-						for (size_t i = 0; i < characters.size(); ++i) {
-							// Concatenate using std::string
-							std::string characterFilePath = folderPathStr + "/" + std::to_string(i) + ".png";
-							imwrite(characterFilePath, characters[i]);
-						}
-
-						waitKey();
+						fs::create_directory(folderToSave);
 					}
+					show = false;
+					Mat initialImage = imread(fname);
+					Mat resizedImage;
+					resizeImg(initialImage, resizedImage, 750, true);
+					Mat grayImage;
+					RGBToGrayscale(resizedImage, grayImage);
+
+					Mat closedImage = closingGrayscale(grayImage);
+
+					Mat bilateralFilteredImage = bilateralFilterAlgorithm(closedImage, 5, 15, 15);
+
+					double k = 0.4;
+					int pH = 50;
+					int pL = static_cast<int>(k * pH);
+					Mat gauss, cannyImage;
+					GaussianBlur(bilateralFilteredImage, gauss, Size(5, 5), 0.5, 0.5);
+
+					Canny(gauss, cannyImage, pL, pH, 3);
+
+					Mat cannyNegative = negativeTransform(cannyImage);
+
+					Mat dilatedCanny = repeatDilationHorizontal(cannyNegative, 3);
+
+					Rect plateRect = detectLicensePlate(dilatedCanny, resizedImage);
+					Mat detectedPlate = resizedImage.clone();
+					Mat licensePlateImage = detectedPlate(plateRect);
+
+					if (plateRect.x == 0 && plateRect.y == 0 && plateRect.width == 0 && plateRect.height == 0) {
+						licensePlateImage = initialImage.clone();
+					}
+
+					rectangle(detectedPlate, plateRect, Scalar(0, 255, 0), 2);
+					Mat grayLicensePlate;
+					RGBToGrayscale(licensePlateImage, grayLicensePlate);
+					Mat thLicense = basicGlobalThresholding(grayLicensePlate);
+					Mat dilatedPlate = repeatDilationVertical(thLicense, d);
+
+					Mat roi = cutBorders(dilatedPlate, percentageV, percentageH);
+					Mat projection = computeProjections(roi);
+					std::vector<Mat> characters = segmentCharactersUsingProj(roi, projection, percentageB, percentageCh);
+					printf("Characters found: %d", characters.size());
+					std::string folderPathStr(folderToSave);
+					for (size_t i = 0; i < characters.size(); ++i) {
+						// Concatenate using std::string
+						std::string characterFilePath = folderPathStr + "/" + std::to_string(i) + ".png";
+						imwrite(characterFilePath, characters[i]);
+					}
+
+					waitKey();
 				}
 			}
-			break;
-			case 3:
+		}
+		break;
+		case 3:
+		{
+			char fname[MAX_PATH];
+			while (openFileDlg(fname))
 			{
-				char fname[MAX_PATH];
-				while (openFileDlg(fname))
-				{
-					Mat image = imread(fname, cv::IMREAD_GRAYSCALE);
+				Mat image = imread(fname, cv::IMREAD_GRAYSCALE);
 
-					if (image.empty()) {
-						std::cerr << "Error: Unable to load the image." << std::endl;
-						return -1;
-					}
-
-					// Parameters for HOG
-					int cell_size = 8;  // Size of each cell (in pixels)
-					int block_size = 2; // Size of the block (number of cells)
-					int nbins = 9;      // Number of bins in the histogram
-
-					// Vector to store the final HOG features
-					std::vector<double> hog_features;
-
-					// Compute HOG features
-					computeHOG(image, cell_size, block_size, nbins, hog_features);
-
-					// Print the first 10 HOG features (optional)
-					std::cout << "Computed HOG Features (first 10): ";
-					for (int i = 0; i < 10 && i < hog_features.size(); i++) {
-						std::cout << hog_features[i] << " ";
-					}
-					std::cout << std::endl;
+				if (image.empty()) {
+					std::cerr << "Error: Unable to load the image." << std::endl;
+					return -1;
 				}
+
+				// Parameters for HOG
+				int cell_size = 8;  // Size of each cell (in pixels)
+				int block_size = 2; // Size of the block (number of cells)
+				int nbins = 9;      // Number of bins in the histogram
+
+				// Vector to store the final HOG features
+				std::vector<double> hog_features;
+
+				// Compute HOG features
+				computeHOG(image, cell_size, block_size, nbins, hog_features);
+
+				// Print the first 10 HOG features (optional)
+				std::cout << "Computed HOG Features (first 10): ";
+				for (int i = 0; i < 10 && i < hog_features.size(); i++) {
+					std::cout << hog_features[i] << " ";
+				}
+				std::cout << std::endl;
 			}
-			break;
+		}
+		break;
+		case 4:
+		{
+			{
+				std::ofstream result_file("C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/evaluation_results_characters.txt", std::ios::app);
+				if (result_file.is_open()) {
+					result_file << "\n--------------------------------------\n";
+					const int C = 36;
+					const int d = 64 * 64;
+
+					std::vector<Mat> trainImages[C], testImages[C];
+					Mat X, y, X_test, y_test;
+
+					srand(static_cast<unsigned int>(time(0)));
+
+					for (int c = 0; c < C; ++c) {
+						std::string folderName;
+						std::string prefix;  // To store the letter or digit used in the filenames
+
+						if (c < 10) {
+							folderName = "digit_" + std::to_string(c);
+							prefix = std::to_string(c);  // For digits, use the number itself
+						}
+						else {
+							folderName = "letter_" + std::string(1, char('A' + (c - 10))); // Create folder names like letter_A
+							prefix = std::string(1, char('A' + (c - 10))); // For letters, use the corresponding letter
+						}
+
+						std::string folderPath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/characters/" + folderName;
+						//result_file << folderName << std::endl;
+
+						// Using std::vector<std::string> for filenames
+						std::vector<std::string> filenames;
+						for (int index = 1; ; ++index) {
+							char fname[256];
+							// Generate filename with the letter or digit prefix
+							sprintf(fname, "%s/%s_%d.png", folderPath.c_str(), prefix.c_str(), index);
+							//result_file << fname << std::endl;
+
+							Mat img = imread(fname, 0); // Load image in grayscale
+							if (img.empty()) break;
+
+							filenames.push_back(std::string(fname)); // Store filename as std::string
+						}
+
+						// Shuffle filenames using std::shuffle
+						std::random_device rd;
+						std::mt19937 g(rd());
+						std::shuffle(filenames.begin(), filenames.end(), g);
+
+						int numTrain = static_cast<int>(filenames.size() * 0.8); // 80% for training
+						int numTest = filenames.size() - numTrain; // 20% for testing
+						//result_file << "Train Number" << numTrain << std::endl;
+						//result_file << "Test Number" << numTest << std::endl;
+
+						// Load training images
+						for (int i = 0; i < numTrain; ++i) {
+							Mat img = imread(filenames[i], 0);
+							Mat resized;
+							cv::resize(img, resized, cv::Size(64, 64));
+							trainImages[c].push_back(resized);
+						}
+
+						// Load testing images
+						for (int i = numTrain; i < filenames.size(); ++i) {
+							Mat img = imread(filenames[i], 0);
+							Mat resized;
+							cv::resize(img, resized, cv::Size(64, 64));
+							testImages[c].push_back(resized);
+						}
+					}
+
+					int totalTrainSamples = 0, totalTestSamples = 0;
+					for (int c = 0; c < C; ++c) {
+						totalTrainSamples += trainImages[c].size();
+						totalTestSamples += testImages[c].size();
+					}
+
+					X = Mat(totalTrainSamples, d, CV_64FC1);
+					y = Mat(totalTrainSamples, 1, CV_64FC1);
+					X_test = Mat(totalTestSamples, d, CV_64FC1);
+					y_test = Mat(totalTestSamples, 1, CV_64FC1);
+					//result_file << "Before Train" << std::endl;
+					int trainIndex = 0;
+					for (int c = 0; c < C; ++c) {
+						for (size_t i = 0; i < trainImages[c].size(); ++i) {
+							Mat binarized = basicGlobalThresholding(trainImages[c][i]);
+							Mat inverted = invertedBW(binarized);
+							Mat flat = inverted.reshape(1, 1);
+							flat.convertTo(flat, CV_64FC1);
+
+							flat.copyTo(X.row(trainIndex));
+							y.at<double>(trainIndex, 0) = c;
+							trainIndex++;
+						}
+					}
+					//result_file << "Before Test" << std::endl;
+					int testIndex = 0;
+					for (int c = 0; c < C; ++c) {
+						for (size_t i = 0; i < testImages[c].size(); ++i) {
+							Mat binarized = basicGlobalThresholding(testImages[c][i]);
+							Mat inverted = invertedBW(binarized);
+							Mat flat = inverted.reshape(1, 1);
+							flat.convertTo(flat, CV_64FC1);
+
+							flat.copyTo(X_test.row(testIndex));
+							y_test.at<double>(testIndex, 0) = c;
+							testIndex++;
+						}
+					}
+
+					Mat priors(C, 1, CV_64FC1);
+					Mat likelihood(C, d, CV_64FC1, Scalar(1));
+					//result_file << "Before likelihood" << std::endl;
+					for (int c = 0; c < C; ++c) {
+						Mat classSamples = X.rowRange(trainIndex * c / C, trainIndex * (c + 1) / C);
+						int classCount = classSamples.rows;
+
+						priors.at<double>(c, 0) = static_cast<double>(classCount) / totalTrainSamples;
+
+						for (int j = 0; j < d; ++j) {
+							double count = 0.0;
+							for (int k = 0; k < classSamples.rows; ++k) {
+								count += (classSamples.at<double>(k, j) == 255 ? 1.0 : 0.0);
+							}
+							likelihood.at<double>(c, j) = (count + 1) / (classCount + 2);  // Apply Laplace smoothing
+						}
+
+					}
+
+					int correct = 0, total = 0;
+					Mat confusionMatrix = Mat::zeros(C, C, CV_32S);
+					//result_file << "Before Bayes" << std::endl;
+					for (int i = 0; i < X_test.rows; ++i) {
+						Mat img = X_test.row(i).reshape(1, 64);
+						int trueClass = static_cast<int>(y_test.at<double>(i, 0));
+						int predictedClass = classifyBayes(img, priors, likelihood);
+
+						if (predictedClass == 0 || trueClass == 35)
+						{
+							confusionMatrix.at<int>(predictedClass, trueClass)++;
+							if (trueClass == predictedClass) correct++;
+						}
+						else {
+							confusionMatrix.at<int>(predictedClass, trueClass+1)++;
+							if (trueClass + 1 == predictedClass) correct++;
+						}
+						
+						total++;
+					}
+
+					double errorRate = 1.0 - (double)correct / total;
+
+					result_file << "Train size: " << totalTrainSamples << std::endl;
+					result_file << "Test size: " << totalTestSamples << std::endl;
+					result_file << "Error Rate: " << errorRate << std::endl;
+					result_file << "Confusion Matrix: " << std::endl << confusionMatrix << std::endl;
+				}
+				result_file.close();
+			}
+
+		}
+		break;
 		}
 	} while (op != 0);
 	return 0;
