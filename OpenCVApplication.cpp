@@ -1490,6 +1490,68 @@ Mat cutBorders(const Mat& binary, double percentageV, double percentageH) {
 	return license_plate;
 }
 
+Mat cutBordersDynamic(const Mat& binary, double verticalThresholdRatio, double horizontalThresholdRatio) {
+	// Compute vertical projection
+	Mat vertical_hist(1, binary.cols, CV_32S, Scalar(0));
+	for (int col = 0; col < binary.cols; ++col) {
+		vertical_hist.at<int>(0, col) = countNonZero(binary.col(col));
+	}
+
+	// Compute horizontal projection
+	Mat horizontal_hist(binary.rows, 1, CV_32S, Scalar(0));
+	for (int row = 0; row < binary.rows; ++row) {
+		horizontal_hist.at<int>(row, 0) = countNonZero(binary.row(row));
+	}
+
+	// Compute dynamic thresholds
+	double maxVertical = *std::max_element(vertical_hist.begin<int>(), vertical_hist.end<int>());
+	double maxHorizontal = *std::max_element(horizontal_hist.begin<int>(), horizontal_hist.end<int>());
+
+	int verticalThreshold = static_cast<int>(maxVertical * verticalThresholdRatio);
+	int horizontalThreshold = static_cast<int>(maxHorizontal * horizontalThresholdRatio);
+
+	// Find vertical bounds (left and right)
+	int left = 0, right = binary.cols - 1;
+	for (int col = 0; col < binary.cols; ++col) {
+		if (vertical_hist.at<int>(0, col) > verticalThreshold) {
+			left = col;
+			break;
+		}
+	}
+	for (int col = binary.cols - 1; col >= 0; --col) {
+		if (vertical_hist.at<int>(0, col) > verticalThreshold) {
+			right = col;
+			break;
+		}
+	}
+
+	// Find horizontal bounds (top and bottom)
+	int top = 0, bottom = binary.rows - 1;
+	for (int row = 0; row < binary.rows; ++row) {
+		if (horizontal_hist.at<int>(row, 0) > horizontalThreshold) {
+			top = row;
+			break;
+		}
+	}
+	for (int row = binary.rows - 1; row >= 0; --row) {
+		if (horizontal_hist.at<int>(row, 0) > horizontalThreshold) {
+			bottom = row;
+			break;
+		}
+	}
+
+	// Crop the image
+	if (left < right && top < bottom) {
+		Rect roi(left, top, right - left + 1, bottom - top + 1);
+		return binary(roi);
+	}
+	else {
+		std::cerr << "Could not find suitable bounds. Returning original image." << std::endl;
+		return binary.clone();
+	}
+}
+
+
 Mat computeProjections(const Mat& binary_img) {
 	int h = binary_img.rows;
 	int w = binary_img.cols;
@@ -2021,7 +2083,8 @@ int main()
 				Mat dilatedPlate = repeatDilationVertical(thLicense, d);
 				imshow("Dilated Plate", dilatedPlate);
 
-				Mat roi = cutBorders(dilatedPlate, percentageV, percentageH);
+				//Mat roi = cutBorders(dilatedPlate, percentageV, percentageH);
+				Mat roi = cutBordersDynamic(dilatedPlate, percentageV, percentageH);
 				imshow("Cut Borders", roi);
 				Mat projection = computeProjections(roi);
 				imshow("Projection", projection);
