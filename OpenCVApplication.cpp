@@ -19,7 +19,11 @@
 #include <ctime>
 #include <cstdlib>
 #include <algorithm>  
-#include <random>
+#include <opencv2/ml.hpp>
+#include <vector>
+#include <memory>
+#include <unordered_map>
+#include <string>
 
 using namespace cv;
 #include <filesystem>
@@ -1628,6 +1632,7 @@ std::vector<Mat> segmentCharactersUsingProj(const Mat& roi, const Mat& projectio
 }
 
 int classifyBayes(Mat img, Mat priors, Mat likelihood) {
+	img.convertTo(img, CV_64F);
 	Mat flat = img.reshape(1, 1);
 	double maxLogPosterior = -DBL_MAX;
 	int bestClass = -1;
@@ -1690,6 +1695,21 @@ int classifyBayes(Mat img, Mat priors, Mat likelihood) {
 
 	return bestClass;
 }
+
+class CustomBayesClassifier {
+public:
+	CustomBayesClassifier(cv::Mat priors, cv::Mat likelihood)
+		: priors(priors), likelihood(likelihood) {
+	}
+
+	int predict(const cv::Mat& sample) const {
+		return classifyBayes(sample, priors, likelihood);
+	}
+
+private:
+	cv::Mat priors;
+	cv::Mat likelihood;
+};
 
 void computeGradients(const cv::Mat& image, cv::Mat& magnitude, cv::Mat& angle) {
 	cv::Mat gx, gy;
@@ -1815,60 +1835,91 @@ Mat binaryThreshold(Mat src) {
 	return dst;
 }
 
+//std::vector<int> votingClassifier(
+//	const std::vector<std::shared_ptr<cv::ml::StatModel>>& classifiers,
+//	const std::vector<cv::Mat>& testSamples,
+//	const std::vector<double>& weights = {}
+//) {
+//	size_t numClassifiers = classifiers.size();
+//	size_t numSamples = testSamples.size();
+//
+//	// Set default weights if none provided
+//	std::vector<double> effectiveWeights = weights.empty() ? std::vector<double>(numClassifiers, 1.0) : weights;
+//
+//	// Ensure weights match the number of classifiers
+//	if (effectiveWeights.size() != numClassifiers) {
+//		throw std::runtime_error("Number of weights must match the number of classifiers.");
+//	}
+//
+//	// Store all predictions
+//	std::vector<std::vector<int>> allPredictions(numClassifiers, std::vector<int>(numSamples));
+//
+//	// Collect predictions from each classifier
+//	for (size_t clfIdx = 0; clfIdx < numClassifiers; ++clfIdx) {
+//		for (size_t sampleIdx = 0; sampleIdx < numSamples; ++sampleIdx) {
+//			cv::Mat sample = testSamples[sampleIdx];
+//			int prediction = static_cast<int>(classifiers[clfIdx]->predict(sample));
+//			allPredictions[clfIdx][sampleIdx] = prediction;
+//		}
+//	}
+//
+//	// Perform weighted voting
+//	std::vector<int> finalPredictions(numSamples);
+//	for (size_t sampleIdx = 0; sampleIdx < numSamples; ++sampleIdx) {
+//		std::unordered_map<int, double> classVotes;
+//
+//		// Accumulate weighted votes for each class
+//		for (size_t clfIdx = 0; clfIdx < numClassifiers; ++clfIdx) {
+//			int predictedClass = allPredictions[clfIdx][sampleIdx];
+//			classVotes[predictedClass] += effectiveWeights[clfIdx];
+//		}
+//
+//		// Select the class with the highest weighted votes
+//		int bestClass = -1;
+//		double maxVotes = -1.0;
+//		for (const auto& [classLabel, voteCount] : classVotes) {
+//			if (voteCount > maxVotes) {
+//				maxVotes = voteCount;
+//				bestClass = classLabel;
+//			}
+//		}
+//
+//		finalPredictions[sampleIdx] = bestClass;
+//	}
+//
+//	return finalPredictions;
+//}
 std::vector<int> votingClassifier(
 	const std::vector<std::shared_ptr<cv::ml::StatModel>>& classifiers,
-	const std::vector<cv::Mat>& testSamples,
-	const std::vector<double>& weights = {}
-) {
-	size_t numClassifiers = classifiers.size();
-	size_t numSamples = testSamples.size();
+	const std::vector<std::shared_ptr<CustomBayesClassifier>>& customClassifiers,
+	const std::vector<cv::Mat>& samples) {
 
-	// Set default weights if none provided
-	std::vector<double> effectiveWeights = weights.empty() ? std::vector<double>(numClassifiers, 1.0) : weights;
+	std::vector<int> predictions;
 
-	// Ensure weights match the number of classifiers
-	if (effectiveWeights.size() != numClassifiers) {
-		throw std::runtime_error("Number of weights must match the number of classifiers.");
-	}
+	for (const auto& sample : samples) {
+		std::map<int, int> classVotes;
 
-	// Store all predictions
-	std::vector<std::vector<int>> allPredictions(numClassifiers, std::vector<int>(numSamples));
-
-	// Collect predictions from each classifier
-	for (size_t clfIdx = 0; clfIdx < numClassifiers; ++clfIdx) {
-		for (size_t sampleIdx = 0; sampleIdx < numSamples; ++sampleIdx) {
-			cv::Mat sample = testSamples[sampleIdx];
-			int prediction = static_cast<int>(classifiers[clfIdx]->predict(sample));
-			allPredictions[clfIdx][sampleIdx] = prediction;
-		}
-	}
-
-	// Perform weighted voting
-	std::vector<int> finalPredictions(numSamples);
-	for (size_t sampleIdx = 0; sampleIdx < numSamples; ++sampleIdx) {
-		std::unordered_map<int, double> classVotes;
-
-		// Accumulate weighted votes for each class
-		for (size_t clfIdx = 0; clfIdx < numClassifiers; ++clfIdx) {
-			int predictedClass = allPredictions[clfIdx][sampleIdx];
-			classVotes[predictedClass] += effectiveWeights[clfIdx];
+		// Predict with standard classifiers
+		for (const auto& classifier : classifiers) {
+			int prediction = classifier->predict(sample);
+			classVotes[prediction]++;
 		}
 
-		// Select the class with the highest weighted votes
-		int bestClass = -1;
-		double maxVotes = -1.0;
-		for (const auto& [classLabel, voteCount] : classVotes) {
-			if (voteCount > maxVotes) {
-				maxVotes = voteCount;
-				bestClass = classLabel;
-			}
+		// Predict with custom Bayes classifier
+		for (const auto& customClassifier : customClassifiers) {
+			int prediction = customClassifier->predict(sample);
+			classVotes[prediction]++;
 		}
 
-		finalPredictions[sampleIdx] = bestClass;
+		// Find the class with the most votes
+		auto maxElement = std::max_element(classVotes.begin(), classVotes.end(),
+			[](const auto& a, const auto& b) { return a.second < b.second; });
+		predictions.push_back(maxElement->first);
 	}
 
-	return finalPredictions;
+	return predictions;
 }
+
 
 std::string getFilenameFromPath(const std::string& filepath) {
 	// Find the position of the last occurrence of '/'
@@ -1974,6 +2025,7 @@ int main()
 		printf(" 4 - Naive Bayes on Characters Dataset\n");
 		printf(" 5 - Naive Bayes and HOG on Characters Dataset\n");
 		printf(" 6 - Naive Bayes and HOG on Single Image\n");
+		printf(" 7 - Voting\n");
 		printf(" 0 - Exit\n\n");
 		printf("Option: ");
 		scanf("%d", &op);
@@ -2689,7 +2741,179 @@ int main()
 			}
 		}
 		break;
+		case 7:
+		{
+			std::ofstream result_file("C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/evaluation_results_characters_voting.txt", std::ios::app);
+			if (result_file.is_open()) {
+				result_file << "\n--------------------------------------\n";
+				const int C = 36;
+				const int d = 128 * 64; // Adjust the feature size based on HOG (number of features per image)
+				show = false;
+				std::vector<Mat> trainImages, testImages;
+				std::vector<int> trainLabels, testLabels;
+				int trainIndex = 0, testIndex = 0;
 
+				srand(static_cast<unsigned int>(time(0)));
+
+				for (int c = 0; c < C; ++c) {
+					std::string folderName;
+					std::string prefix;
+
+					if (c < 10) {
+						folderName = "digit_" + std::to_string(c);
+						prefix = std::to_string(c);
+					}
+					else {
+						folderName = "letter_" + std::string(1, char('A' + (c - 10)));
+						prefix = std::string(1, char('A' + (c - 10)));
+					}
+
+					std::string folderPath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/characters/" + folderName;
+					std::vector<std::string> filenames;
+					for (int index = 1; ; ++index) {
+						char fname[256];
+						sprintf(fname, "%s/%s_%d.png", folderPath.c_str(), prefix.c_str(), index);
+						Mat img = imread(fname, 0); // Load image in grayscale
+						if (img.empty()) break;
+						filenames.push_back(std::string(fname));
+					}
+
+					std::random_device rd;
+					std::mt19937 g(rd());
+					std::shuffle(filenames.begin(), filenames.end(), g);
+					
+					size_t trainSize = filenames.size() * 0.8;
+
+					for (size_t i = 0; i < filenames.size(); ++i) {
+						cv::Mat img = cv::imread(filenames[i], 0);
+						cv::resize(img, img, cv::Size(128, 64));
+						img = basicGlobalThresholding(img);
+
+						std::vector<double> hogFeatures;
+						computeHOG(img, 8, 2, 9, hogFeatures);
+
+						cv::Mat featureMat(hogFeatures);
+						featureMat = featureMat.reshape(1, 1);
+						featureMat.convertTo(featureMat, CV_32F);
+
+						if (i < trainSize) {
+							trainImages.push_back(featureMat);
+							trainLabels.push_back(c);
+							trainIndex++;
+						}
+						else {
+							testImages.push_back(featureMat);
+							testLabels.push_back(c);
+							testIndex++;
+						}
+					}
+				}
+
+				cv::Mat X_train, y_train, X_test, y_test;
+				cv::vconcat(trainImages, X_train);
+				cv::Mat(trainLabels).convertTo(y_train, CV_32S);
+				cv::vconcat(testImages, X_test);
+				cv::Mat(testLabels).convertTo(y_test, CV_32S);
+
+				cv::Mat priors(C, 1, CV_64FC1);
+				cv::Mat likelihood(C, d, CV_64FC1, cv::Scalar(1.0));
+
+				for (int c = 0; c < C; ++c) {
+					Mat classSamples = X_train.rowRange(trainIndex * c / C, trainIndex * (c + 1) / C);
+					int classCount = classSamples.rows;
+					classSamples.convertTo(classSamples, CV_64F);
+					priors.at<double>(c, 0) = static_cast<double>(classCount) / X_train.rows;
+					//result_file << "Priors(" << c << ", 0): " << priors.at<double>(c, 0) << std::endl;
+					for (int j = 0; j < 4320; ++j) {
+						double count = 0.0;
+						for (int k = 0; k < classSamples.rows; ++k) {
+							if (classSamples.at<double>(k, j) != 0) {
+								count++;
+								//result_file << "Class Sample value: " << classSamples.at<double>(k, j) << std::endl;
+							}
+						}
+						if (count == 0) {
+							likelihood.at<double>(c, j) = (count + 1) / (classCount + C);
+							//result_file << "Count is 0 at " << c << ", " << j << std::endl;;
+						}
+						else {
+							likelihood.at<double>(c, j) = count / classCount;
+							//result_file << "Count is not 0 at " << c << ", " << j << std::endl;;
+						}
+						//result_file << "Likehood(" << c << ", " << j << "): " << likelihood.at<double>(c, j) << std::endl;
+					}
+				}
+
+				int correct = 0, total = 0;
+				Mat confusionMatrix = Mat::zeros(C, C, CV_32S);
+
+				std::vector<int> predictedClasses;
+
+				for (int i = 0; i < X_test.rows; ++i) {
+					Mat img = X_test.row(i).reshape(1, 4320); 
+					int predictedClass = classifyBayes(img, priors, likelihood);
+					predictedClasses.push_back(predictedClass);					
+				}
+
+				// If you need to store the classifiers (though now it's just predicted classes, not actual classifiers)
+				//std::vector<std::shared_ptr<cv::ml::NormalBayesClassifier>> classifiers;
+				std::vector<std::shared_ptr<cv::ml::StatModel>> classifiers;
+
+				// SVM
+				auto svm = cv::ml::SVM::create();
+				svm->setKernel(cv::ml::SVM::LINEAR);
+				svm->train(X_train, cv::ml::ROW_SAMPLE, y_train);
+				classifiers.push_back(svm);
+
+				// Random Forest
+				auto rf = cv::ml::RTrees::create();
+				rf->train(X_train, cv::ml::ROW_SAMPLE, y_train);
+				classifiers.push_back(rf);
+
+				// KNN
+				auto knn = cv::ml::KNearest::create();
+				knn->train(X_train, cv::ml::ROW_SAMPLE, y_train);
+				classifiers.push_back(knn);
+
+				// Perform voting classification
+				std::vector<cv::Mat> testSamplesVec;
+				for (int i = 0; i < X_test.rows; ++i) {
+					testSamplesVec.push_back(X_test.row(i));
+				}
+
+				std::vector<std::shared_ptr<CustomBayesClassifier>> customClassifiers;
+				customClassifiers.push_back(std::make_shared<CustomBayesClassifier>(priors, likelihood));
+
+				std::vector<int> predictions = votingClassifier(classifiers, customClassifiers, testSamplesVec);
+
+				for (size_t i = 0; i < testLabels.size(); ++i) {
+					if (predictions[i] == testLabels[i]) {
+						correct++;
+					}
+					confusionMatrix.at<int>(predictions[i], testLabels[i])++;
+					total++;
+				}
+				double accuracy = static_cast<double>(correct) / total;
+				result_file << "Accuracy: " << accuracy << std::endl;
+				for (int c = 0; c < C; ++c) {
+					int TP = confusionMatrix.at<int>(c, c);
+					int FN = cv::sum(confusionMatrix.row(c))[0] - TP;
+					int FP = cv::sum(confusionMatrix.col(c))[0] - TP;
+					int TN = cv::sum(confusionMatrix)[0] - (TP + FP + FN);
+
+					double precision = TP / static_cast<double>(TP + FP);
+					double recall = TP / static_cast<double>(TP + FN);
+					double f1Score = 2 * (precision * recall) / (precision + recall);
+
+					result_file << "Class " << c << ": Precision = " << precision
+						<< ", Recall = " << recall
+						<< ", F1-Score = " << f1Score << std::endl;
+				}
+
+			}
+			result_file.close();
+		}
+		break;
 		}
 	} while (op != 0);
 	return 0;
