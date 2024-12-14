@@ -29,9 +29,6 @@ using namespace cv;
 #include <filesystem>
 namespace fs = std::filesystem;
 
-
-
-
 const double MIN_ASPECT_RATIO = 2.5;
 const double MAX_ASPECT_RATIO = 5.0;
 bool show = true;
@@ -274,7 +271,6 @@ Mat dilationGrayscale(const Mat& src) {
 	}
 	return dst;
 }
-
 
 Mat repeatDilationHorizontal(const Mat& src, int n) {
 	Mat dst = src.clone();
@@ -1259,7 +1255,6 @@ Rect detectLicensePlate(const Mat& src, const Mat& colorImage) {
 			}
 		}
 	}
-
 	return selectedPlateRect;
 }
 
@@ -1397,7 +1392,6 @@ Mat adaptiveThresholding(Mat& src, int blockSize, double c) {
 
 Mat findROI(const Mat& img) {
 	Mat hist_vert, hist_hor;
-	// Calculate the sum of intensities along each row
 	Mat row_sums(img.rows, 1, CV_32SC1);
 	for (int y = 0; y < img.rows; y++) {
 		int sum = 0;
@@ -1407,7 +1401,6 @@ Mat findROI(const Mat& img) {
 		row_sums.at<int>(y, 0) = sum;
 	}
 
-	// Calculate the sum of intensities along each column
 	Mat col_sums(1, img.cols, CV_32SC1);
 	for (int x = 0; x < img.cols; x++) {
 		int sum = 0;
@@ -1417,7 +1410,6 @@ Mat findROI(const Mat& img) {
 		col_sums.at<int>(0, x) = sum;
 	}
 
-	// Find the boundaries of the ROI
 	int left = 0, right = img.cols - 1, top = 0, bottom = img.rows - 1;
 	for (int i = 0; i < hist_vert.cols; i++) {
 		if (hist_vert.at<int>(0, i) > 0) {
@@ -1444,10 +1436,8 @@ Mat findROI(const Mat& img) {
 		}
 	}
 
-	// Crop the image
 	Mat cropped_img = img(Rect(left, top, right - left + 1, bottom - top + 1));
 
-	// Display the cropped image
 	if (show) {
 		imshow("Cropped Image", cropped_img);
 	}
@@ -1455,49 +1445,44 @@ Mat findROI(const Mat& img) {
 }
 
 Mat cutBorders(const Mat& binary, double percentageV, double percentageH) {
-	// Step 1: Calculate the vertical histogram (sum of non-zero pixels in each column)
 	Mat vertical_hist(1, binary.cols, CV_32S, Scalar(0));
 	for (int col = 0; col < binary.cols; ++col) {
 		vertical_hist.at<int>(0, col) = countNonZero(binary.col(col));
 	}
 
-	// Step 2: Find left and right boundaries using a threshold
 	double maxVal;
 	minMaxLoc(vertical_hist, nullptr, &maxVal);
-	int thresholdVertically = static_cast<int>(maxVal * percentageV); // 10% of max value to detect white area
+	int thresholdVertically = static_cast<int>(maxVal * percentageV);
 
 	int left = -1, right = -1;
 	for (int col = 0; col < vertical_hist.cols; ++col) {
 		if (vertical_hist.at<int>(0, col) > thresholdVertically) {
 			if (left == -1) {
-				left = col; // Start of the white rectangle
+				left = col; 
 			}
-			right = col; // Continuously update the right boundary
+			right = col; 
 		}
 	}
 
-	// Step 3: Calculate the horizontal histogram (sum of non-zero pixels in each row)
 	Mat horizontal_hist(binary.rows, 1, CV_32S, Scalar(0));
 	for (int row = 0; row < binary.rows; ++row) {
 		horizontal_hist.at<int>(row, 0) = countNonZero(binary.row(row));
 	}
 
-	// Step 4: Find top and bottom boundaries using the new threshold
 	int thresholdHorizontally = static_cast<int>(maxVal * percentageH);
 	int top = -1, bottom = -1;
 	for (int row = 0; row < horizontal_hist.rows; ++row) {
 		if (horizontal_hist.at<int>(row, 0) > thresholdHorizontally) {
 			if (top == -1) {
-				top = row; // Start of the white rectangle
+				top = row; 
 			}
-			bottom = row; // Continuously update the bottom boundary
+			bottom = row; 
 		}
 	}
 	Mat license_plate = binary.clone();
-	// Step 5: Crop the white rectangle region
 	if (left != -1 && right != -1 && top != -1 && bottom != -1) {
-		Rect roi(left, top, right - left, bottom - top); // Define the region of interest
-		license_plate = binary(roi); // Crop the image
+		Rect roi(left, top, right - left, bottom - top); 
+		license_plate = binary(roi); 
 	}
 	else {
 		printf("License plate boundaries not found!\n");
@@ -1508,12 +1493,9 @@ Mat cutBorders(const Mat& binary, double percentageV, double percentageH) {
 Mat computeProjections(const Mat& binary_img) {
 	int h = binary_img.rows;
 	int w = binary_img.cols;
-
 	std::vector<int> projectionHoriz(h, 0);
 	std::vector<int> projectionVert(w, 0);
-
 	Mat projection_img(h, w, CV_8UC1, Scalar(255));
-
 	for (int i = 0; i < h; i++) {
 		for (int j = 0; j < w; j++) {
 			if (binary_img.at<uchar>(i, j) == 0) {
@@ -1521,7 +1503,6 @@ Mat computeProjections(const Mat& binary_img) {
 			}
 		}
 	}
-
 	for (int j = 0; j < w; j++) {
 		for (int i = 0; i < h; i++) {
 			if (binary_img.at<uchar>(i, j) == 0) {
@@ -1529,14 +1510,11 @@ Mat computeProjections(const Mat& binary_img) {
 			}
 		}
 	}
-
-
 	for (int j = 0; j < w; j++) {
 		for (int i = 0; i < projectionVert[j]; i++) {
 			projection_img.at<uchar>(i, j) = 0;
 		}
 	}
-
 	return projection_img;
 }
 
@@ -1557,77 +1535,62 @@ std::vector<Mat> segmentCharactersUsingProj(const Mat& roi, const Mat& projectio
 	int h = roi.rows;
 	int w = roi.cols;
 
-	// Find the first non-black row (to cut top black margin)
 	int topMarginCut = 0;
 	for (int i = 0; i < h; i++) {
 		int blackPixels = 0;
 		for (int j = 0; j < w; j++) {
-			if (projection.at<uchar>(i, j) == 0) { // Black pixel
+			if (projection.at<uchar>(i, j) == 0) { 
 				blackPixels++;
 			}
 		}
-		// If more than 90% of the row is black, it's considered part of the top margin
-		printf("Threshold Black pixels: %f\n", w * 0.9);
-		if (blackPixels < w * thresholdProj) { // Adjust threshold if necessary (e.g., 90% black pixels)
+		if (blackPixels < w * thresholdProj) { 
 			topMarginCut = i + 1;
 			printf("Top Margin Cut %d with value of black pixels: %d\n", i, blackPixels);
 			break;
 		}
 	}
-
-	// Now that we have the topMarginCut, we can crop the image and focus on the region of interest (roi)
 	Mat projCropped = projection(Rect(0, topMarginCut, w, h - topMarginCut));
 	if (show) {
 		imshow("Projection Cropped", projCropped);
 	}
-	// Create a vector to store the number of black pixels in each column (vertical projection)
 	std::vector<int> projectionVert(w, 0);
 
-	// Fill the projectionVert based on the projection image (assuming binary projection)
 	for (int j = 0; j < w; j++) {
 		for (int i = 0; i < h - topMarginCut; i++) {
-			if (projCropped.at<uchar>(i, j) == 0) { // Object pixel (black)
+			if (projCropped.at<uchar>(i, j) == 0) { 
 				projectionVert[j]++;
 			}
 		}
 	}
 
-	// Now segment the characters based on the vertical projection
 	std::vector<int> boundaries;
 	bool inSegment = false;
 
-	// Iterate over the vertical projection to find the column boundaries of characters
 	for (int j = 0; j < w; j++) {
 		if (projectionVert[j] > 0 && !inSegment) {
-			boundaries.push_back(j);  // Start of a new character segment
+			boundaries.push_back(j);  
 			inSegment = true;
 		}
 		else if (projectionVert[j] == 0 && inSegment) {
-			boundaries.push_back(j - 1);  // End of the current character segment
+			boundaries.push_back(j - 1);  
 			inSegment = false;
 		}
 	}
-
-	// Check if the last segment extends to the end of the image
 	if (inSegment) {
 		boundaries.push_back(w - 1);
 	}
 
-	// Extract individual characters based on column boundaries
 	std::vector<Mat> characters;
 	for (size_t i = 0; i < boundaries.size(); i += 2) {
 		int startCol = boundaries[i];
 		int endCol = boundaries[i + 1];
-
-		// Define the rectangle for the character
 		Rect charRect(startCol, topMarginCut, endCol - startCol + 1, h - topMarginCut);
-		Mat character = roi(charRect).clone(); // Clone to avoid referencing the original
+		Mat character = roi(charRect).clone(); 
 		printf("Percentage Black: %f\n", percentageBlack(character));
 		if (threasholdBlack < percentageBlack(character) && percentageBlack(character) < 0.95) {
 			characters.push_back(character);
 		}
 	}
-
 	return characters;
 }
 
@@ -1636,9 +1599,7 @@ int classifyBayes(Mat img, Mat priors, Mat likelihood) {
 	Mat flat = img.reshape(1, 1);
 	double maxLogPosterior = -DBL_MAX;
 	int bestClass = -1;
-
 	std::vector<double> logPosteriors(priors.rows, 0.0);
-
 	std::ofstream log_file("C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/log_bayes.txt", std::ios::trunc);
 	if (log_file.is_open()) {
 		log_file << "New Run: Log Posterior Values and Probabilities\n";
@@ -1659,40 +1620,33 @@ int classifyBayes(Mat img, Mat priors, Mat likelihood) {
 				}
 				else {
 					logPosterior += log(likelihood.at<double>(c, j) + epsilon);
-					//log_file << "Flat at " << j << " = " << flat.at<double>(0, j) << std::endl;
 				}
 			}
 			logPosteriors[c] = logPosterior;
-
 			if (maxLogPosterior < logPosterior) {
 				bestClass = c;
 				maxLogPosterior = logPosterior;
 			}
 		}
-
 		log_file << "Log posterior values for each class:" << std::endl;
 		for (int c = 0; c < priors.rows; c++) {
 			log_file << "Class " << c << ": " << logPosteriors[c] << std::endl;
 		}
-
 		double logSumExp = 0.0;
 		for (double logPosterior : logPosteriors) {
 			logSumExp += exp(logPosterior - maxLogPosterior);
 		}
 		logSumExp = maxLogPosterior + log(logSumExp);
-
 		std::vector<double> probabilities(priors.rows, 0.0);
 		for (int c = 0; c < priors.rows; c++) {
 			probabilities[c] = exp(logPosteriors[c] - logSumExp);
 		}
-
 		log_file << "Probabilities for each class:" << std::endl;
 		for (int c = 0; c < priors.rows; c++) {
 			log_file << "Class " << c << ": " << probabilities[c] << std::endl;
 		}
 	}
 	log_file.close();
-
 	return bestClass;
 }
 
@@ -1701,11 +1655,9 @@ public:
 	CustomBayesClassifier(cv::Mat priors, cv::Mat likelihood)
 		: priors(priors), likelihood(likelihood) {
 	}
-
 	int predict(const cv::Mat& sample) const {
 		return classifyBayes(sample, priors, likelihood);
 	}
-
 private:
 	cv::Mat priors;
 	cv::Mat likelihood;
@@ -1713,11 +1665,8 @@ private:
 
 void computeGradients(const cv::Mat& image, cv::Mat& magnitude, cv::Mat& angle) {
 	cv::Mat gx, gy;
-	// Compute gradients using Sobel operator
 	cv::Sobel(image, gx, CV_64F, 1, 0, 3);
 	cv::Sobel(image, gy, CV_64F, 0, 1, 3);
-
-	// Compute magnitude and angle
 	magnitude = cv::Mat(image.size(), CV_64F);
 	angle = cv::Mat(image.size(), CV_64F);
 
@@ -1743,7 +1692,6 @@ std::vector<double> computeClassifierWeights(
 	std::vector<double> weights(classifiers.size() + customClassifiers.size(), 0.0);
 	std::vector<double> performances;
 
-	// Evaluate performance of predefined classifiers
 	for (size_t i = 0; i < classifiers.size(); ++i) {
 		int correct = 0;
 		for (size_t j = 0; j < validationSamples.size(); ++j) {
@@ -1756,7 +1704,6 @@ std::vector<double> computeClassifierWeights(
 		performances.push_back(accuracy);
 	}
 
-	// Evaluate performance of custom Naive Bayes classifiers
 	for (size_t i = 0; i < customClassifiers.size(); ++i) {
 		int correct = 0;
 		for (size_t j = 0; j < validationSamples.size(); ++j) {
@@ -1766,10 +1713,9 @@ std::vector<double> computeClassifierWeights(
 			}
 		}
 		double accuracy = static_cast<double>(correct) / validationSamples.size();
-		performances.push_back(accuracy * bayesWeightScale); // Scale for Naive Bayes
+		performances.push_back(accuracy * bayesWeightScale); 
 	}
 
-	// Normalize weights
 	double sumPerformance = std::accumulate(performances.begin(), performances.end(), 0.0);
 	for (size_t i = 0; i < performances.size(); ++i) {
 		weights[i] = performances[i] / sumPerformance;
@@ -1777,7 +1723,6 @@ std::vector<double> computeClassifierWeights(
 
 	return weights;
 }
-
 
 void computeHistograms(const cv::Mat& magnitude, const cv::Mat& angle, int nbins, int cell_size,
 	std::vector<std::vector<double>>& histograms) {
@@ -1787,25 +1732,17 @@ void computeHistograms(const cv::Mat& magnitude, const cv::Mat& angle, int nbins
 
 			for (int y = i; y < i + cell_size && y < magnitude.rows; y++) {
 				for (int x = j; x < j + cell_size && x < magnitude.cols; x++) {
-					// Calculate the bin index based on the angle
 					int bin_idx = static_cast<int>(angle.at<double>(y, x) / (180 / nbins));
-
-					// Ensure bin_idx stays within the valid range (0 to nbins-1)
 					bin_idx = min(max(bin_idx, 0), nbins - 1);
-
-					// Accumulate the magnitude value into the corresponding bin
 					cell_hist[bin_idx] += magnitude.at<double>(y, x);
 				}
 			}
-
-			// Store the histogram for the current cell
 			histograms.push_back(cell_hist);
 		}
 	}
 }
 
 void computeHOG(const cv::Mat& image, int cell_size, int block_size, int nbins, std::vector<double>& hog_features) {
-	// Resize the image to 128x64
 	if (show) {
 		imshow("Input", image);
 	}
@@ -1814,38 +1751,28 @@ void computeHOG(const cv::Mat& image, int cell_size, int block_size, int nbins, 
 	if (show) {
 		imshow("Resized", image);
 	}
-	// Compute gradient magnitude and angle
 	cv::Mat magnitude, angle;
 	computeGradients(image_resized, magnitude, angle);
 	if (show) {
 		imshow("Magnitude", magnitude);
 		imshow("Angle", angle);
 	}
-	// Compute cell histograms
 	std::vector<std::vector<double>> cell_histograms;
 	computeHistograms(magnitude, angle, nbins, cell_size, cell_histograms);
-
-	// Group cells into blocks and normalize histograms (L2-norm)
 	for (size_t i = 0; i < cell_histograms.size() - (block_size - 1) * cell_size; i++) {
-		std::vector<double> block_hist;
-
-		// Form a block from adjacent cells
+		std::vector<double> block_hist;		
 		for (int b = 0; b < block_size * block_size; b++) {
 			block_hist.insert(block_hist.end(), cell_histograms[i + b].begin(), cell_histograms[i + b].end());
 		}
-
-		// Normalize block histogram (L2-norm)
 		double norm_factor = 0.0;
 		for (double value : block_hist) {
 			norm_factor += value * value;
 		}
-		norm_factor = std::sqrt(norm_factor + 1e-6); // Avoid division by zero
+		norm_factor = std::sqrt(norm_factor + 1e-6); 
 
 		for (double& value : block_hist) {
 			value /= norm_factor;
 		}
-
-		// Append block histogram to the HOG feature vector
 		hog_features.insert(hog_features.end(), block_hist.begin(), block_hist.end());
 	}
 	waitKey();
@@ -1916,23 +1843,17 @@ std::vector<int> weightedVotingClassifier(
 }
 
 std::string getFilenameFromPath(const std::string& filepath) {
-	// Find the position of the last occurrence of '/'
 	size_t pos = filepath.find_last_of("/");
-
-	// If '/' is found, return the substring after it, otherwise return the full filepath
 	if (pos != std::string::npos) {
 		return filepath.substr(pos + 1);
 	}
 	else {
-		// No '/' found, return the full filepath
 		return filepath;
 	}
 }
 
 std::string cleanText(const std::string& text) {
 	std::string cleanedText = text;
-
-	// Remove spaces and newlines
 	cleanedText.erase(std::remove_if(cleanedText.begin(), cleanedText.end(),
 		[](unsigned char c) { return std::isspace(c); }),
 		cleanedText.end());
@@ -1941,30 +1862,21 @@ std::string cleanText(const std::string& text) {
 }
 
 void writeResultsToCSV(const std::string& filename, const std::vector<std::pair<std::string, std::string>>& dataset) {
-	// Create an output filestream object
-	std::ofstream outputFile(filename, std::ios::app); // Append mode
+	std::ofstream outputFile(filename, std::ios::app); 
 
 	if (!outputFile.is_open()) {
 		std::cerr << "Failed to open file: " << filename << std::endl;
 		return;
 	}
-
-	// Send data to the stream
 	for (size_t i = 0; i < dataset.size(); ++i) {
-		// Clean OCR output
 		std::string cleanedOutput = cleanText(dataset[i].second);
-
-		// Write cleaned data to CSV
 		outputFile << getFilenameFromPath(dataset[i].first) << ";" << cleanedOutput << std::endl;
 	}
-
-	// Close the file
 	outputFile.close();
 }
 
 std::vector<std::string> listFiles(const std::string& directoryPath) {
 	std::vector<std::string> files;
-
 	WIN32_FIND_DATAA findFileData;
 	HANDLE hFind = FindFirstFileA((directoryPath + "/*").c_str(), &findFileData);
 	if (hFind != INVALID_HANDLE_VALUE) {
@@ -1975,20 +1887,15 @@ std::vector<std::string> listFiles(const std::string& directoryPath) {
 		} while (FindNextFileA(hFind, &findFileData) != 0);
 		FindClose(hFind);
 	}
-
 	return files;
 }
 
 void writeResultsToCSV5Columns(const std::string& filename, const std::vector<std::tuple<std::string, int, int, int, int>>& dataset) {
-	// Create an output filestream object
-	std::ofstream outputFile(filename, std::ios::app); // Append mode
-
+	std::ofstream outputFile(filename, std::ios::app); 
 	if (!outputFile.is_open()) {
 		std::cerr << "Failed to open file: " << filename << std::endl;
 		return;
 	}
-
-	// Write data to CSV
 	for (const auto& data : dataset) {
 		outputFile << std::get<0>(data) << ";"
 			<< std::get<1>(data) << ";"
@@ -1996,8 +1903,6 @@ void writeResultsToCSV5Columns(const std::string& filename, const std::vector<st
 			<< std::get<3>(data) << ";"
 			<< std::get<4>(data) << std::endl;
 	}
-
-	// Close the file
 	outputFile.close();
 }
 
@@ -2045,14 +1950,10 @@ int main()
 			printf("Give percentage for black pixels threshold in character image: ");
 			getchar();
 			scanf("%d", &ch);
-			/*printf("Give noise dimension: ");
-			getchar();
-			scanf("%d", &noise);*/
 			percentageV = (double)v / 100.0;
 			percentageH = (double)h / 100.0;
 			percentageB = (double)b / 100.0;
 			percentageCh = (double)ch / 100.0;
-			/*percentageG = (double)g / 100.0;*/
 			while (openFileDlg(fname))
 			{
 				std::string filePath(fname);
@@ -2219,11 +2120,9 @@ int main()
 					printf("Characters found: %d", characters.size());
 					std::string folderPathStr(folderToSave);
 					for (size_t i = 0; i < characters.size(); ++i) {
-						// Concatenate using std::string
 						std::string characterFilePath = folderPathStr + "/" + std::to_string(i) + ".png";
 						imwrite(characterFilePath, characters[i]);
 					}
-
 					waitKey();
 				}
 			}
@@ -2240,19 +2139,15 @@ int main()
 					std::cerr << "Error: Unable to load the image." << std::endl;
 					return -1;
 				}
+				int cell_size = 8;  
+				int block_size = 2; 
+				int nbins = 9;     
 
-				// Parameters for HOG
-				int cell_size = 8;  // Size of each cell (in pixels)
-				int block_size = 2; // Size of the block (number of cells)
-				int nbins = 9;      // Number of bins in the histogram
-
-				// Vector to store the final HOG features
 				std::vector<double> hog_features;
 				imshow("Input", image);
 				Mat binarized = basicGlobalThresholding(image);
 				imshow("Binarized", binarized);
 				Mat invertedImage = invertedBW(binarized);
-				// Compute HOG features
 				computeHOG(invertedImage, cell_size, block_size, nbins, hog_features);
 				std::cout << "Computed HOG Features size: " << hog_features.size() << std::endl;
 				std::cout << "Computed HOG Features: ";
@@ -2272,53 +2167,42 @@ int main()
 					result_file << "\n--------------------------------------\n";
 					const int C = 36;
 					const int d = 64 * 64;
-
 					std::vector<Mat> trainImages[C], testImages[C];
 					Mat X, y, X_test, y_test;
-
 					srand(static_cast<unsigned int>(time(0)));
 
 					for (int c = 0; c < C; ++c) {
 						std::string folderName;
-						std::string prefix;  // To store the letter or digit used in the filenames
+						std::string prefix; 
 
 						if (c < 10) {
 							folderName = "digit_" + std::to_string(c);
-							prefix = std::to_string(c);  // For digits, use the number itself
+							prefix = std::to_string(c);  
 						}
 						else {
-							folderName = "letter_" + std::string(1, char('A' + (c - 10))); // Create folder names like letter_A
-							prefix = std::string(1, char('A' + (c - 10))); // For letters, use the corresponding letter
+							folderName = "letter_" + std::string(1, char('A' + (c - 10)));
+							prefix = std::string(1, char('A' + (c - 10))); 
 						}
 
 						std::string folderPath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/characters/" + folderName;
-						//result_file << folderName << std::endl;
-
-						// Using std::vector<std::string> for filenames
 						std::vector<std::string> filenames;
 						for (int index = 1; ; ++index) {
 							char fname[256];
-							// Generate filename with the letter or digit prefix
 							sprintf(fname, "%s/%s_%d.png", folderPath.c_str(), prefix.c_str(), index);
-							//result_file << fname << std::endl;
 
-							Mat img = imread(fname, 0); // Load image in grayscale
+							Mat img = imread(fname, 0); 
 							if (img.empty()) break;
 
-							filenames.push_back(std::string(fname)); // Store filename as std::string
+							filenames.push_back(std::string(fname));
 						}
 
-						// Shuffle filenames using std::shuffle
 						std::random_device rd;
 						std::mt19937 g(rd());
 						std::shuffle(filenames.begin(), filenames.end(), g);
 
-						int numTrain = static_cast<int>(filenames.size() * 0.8); // 80% for training
-						int numTest = filenames.size() - numTrain; // 20% for testing
-						//result_file << "Train Number" << numTrain << std::endl;
-						//result_file << "Test Number" << numTest << std::endl;
+						int numTrain = static_cast<int>(filenames.size() * 0.8); 
+						int numTest = filenames.size() - numTrain; 
 
-						// Load training images
 						for (int i = 0; i < numTrain; ++i) {
 							Mat img = imread(filenames[i], 0);
 							Mat resized;
@@ -2326,7 +2210,6 @@ int main()
 							trainImages[c].push_back(resized);
 						}
 
-						// Load testing images
 						for (int i = numTrain; i < filenames.size(); ++i) {
 							Mat img = imread(filenames[i], 0);
 							Mat resized;
@@ -2345,7 +2228,6 @@ int main()
 					y = Mat(totalTrainSamples, 1, CV_64FC1);
 					X_test = Mat(totalTestSamples, d, CV_64FC1);
 					y_test = Mat(totalTestSamples, 1, CV_64FC1);
-					//result_file << "Before Train" << std::endl;
 					int trainIndex = 0;
 					for (int c = 0; c < C; ++c) {
 						for (size_t i = 0; i < trainImages[c].size(); ++i) {
@@ -2359,7 +2241,7 @@ int main()
 							trainIndex++;
 						}
 					}
-					//result_file << "Before Test" << std::endl;
+
 					int testIndex = 0;
 					for (int c = 0; c < C; ++c) {
 						for (size_t i = 0; i < testImages[c].size(); ++i) {
@@ -2376,7 +2258,6 @@ int main()
 
 					Mat priors(C, 1, CV_64FC1);
 					Mat likelihood(C, d, CV_64FC1, Scalar(1));
-					//result_file << "Before likelihood" << std::endl;
 					for (int c = 0; c < C; ++c) {
 						Mat classSamples = X.rowRange(trainIndex * c / C, trainIndex * (c + 1) / C);
 						int classCount = classSamples.rows;
@@ -2400,22 +2281,12 @@ int main()
 
 					int correct = 0, total = 0;
 					Mat confusionMatrix = Mat::zeros(C, C, CV_32S);
-					//result_file << "Before Bayes" << std::endl;
 					for (int i = 0; i < X_test.rows; ++i) {
 						Mat img = X_test.row(i).reshape(1, 64);
 						int trueClass = static_cast<int>(y_test.at<double>(i, 0));
 						int predictedClass = classifyBayes(img, priors, likelihood);
-
-						/*if (predictedClass == 0 || trueClass == 35)
-						{*/
 						confusionMatrix.at<int>(predictedClass, trueClass)++;
 						if (trueClass == predictedClass) correct++;
-						/*}
-						else {
-							confusionMatrix.at<int>(predictedClass, trueClass+1)++;
-							if (trueClass + 1 == predictedClass) correct++;
-						}*/
-
 						total++;
 					}
 
@@ -2437,13 +2308,11 @@ int main()
 			if (result_file.is_open()) {
 				result_file << "\n--------------------------------------\n";
 				const int C = 36;
-				const int d = 128 * 64; // Adjust the feature size based on HOG (number of features per image)
+				const int d = 128 * 64; 
 				show = false;
 				std::vector<Mat> trainImages[C], testImages[C];
 				Mat X, y, X_test, y_test;
-
 				srand(static_cast<unsigned int>(time(0)));
-
 				for (int c = 0; c < C; ++c) {
 					std::string folderName;
 					std::string prefix;
@@ -2462,7 +2331,7 @@ int main()
 					for (int index = 1; ; ++index) {
 						char fname[256];
 						sprintf(fname, "%s/%s_%d.png", folderPath.c_str(), prefix.c_str(), index);
-						Mat img = imread(fname, 0); // Load image in grayscale
+						Mat img = imread(fname, 0); 
 						if (img.empty()) break;
 						filenames.push_back(std::string(fname));
 					}
@@ -2505,16 +2374,14 @@ int main()
 				int trainIndex = 0;
 				for (int c = 0; c < C; ++c) {
 					for (size_t i = 0; i < trainImages[c].size(); ++i) {
-						// Compute HOG features for the training images
 						std::vector<double> hog_features;
-						computeHOG(trainImages[c][i], 8, 2, 9, hog_features);  // Example: 8x8 cells, 2x2 blocks, 9 bins
-						//result_file << "HOG feature size: " << hog_features.size() << std::endl;
+						computeHOG(trainImages[c][i], 8, 2, 9, hog_features);  
 						if (hog_features.empty()) {
 							result_file << "Error: HOG feature vector is empty!" << std::endl;
-							continue; // Skip this image if features are not computed
+							continue; 
 						}
 						Mat hog_mat(hog_features);
-						hog_mat = hog_mat.reshape(1, 1); // Flatten the feature vector
+						hog_mat = hog_mat.reshape(1, 1); 
 						hog_mat.convertTo(hog_mat, CV_64FC1);
 						try {
 							hog_mat.copyTo(X.row(trainIndex));
@@ -2522,7 +2389,6 @@ int main()
 						catch (const cv::Exception& e) {
 							result_file << "OpenCV exception: " << e.what() << std::endl;
 						}
-
 						y.at<double>(trainIndex, 0) = c;
 						trainIndex++;
 					}
@@ -2531,11 +2397,10 @@ int main()
 				int testIndex = 0;
 				for (int c = 0; c < C; ++c) {
 					for (size_t i = 0; i < testImages[c].size(); ++i) {
-						// Compute HOG features for the test images
 						std::vector<double> hog_features;
 						computeHOG(testImages[c][i], 8, 2, 9, hog_features);
 						Mat hog_mat(hog_features);
-						hog_mat = hog_mat.reshape(1, 1); // Flatten the feature vector
+						hog_mat = hog_mat.reshape(1, 1); 
 						hog_mat.convertTo(hog_mat, CV_64FC1);
 						hog_mat.copyTo(X_test.row(testIndex));
 						y_test.at<double>(testIndex, 0) = c;
@@ -2551,24 +2416,20 @@ int main()
 					int classCount = classSamples.rows;
 
 					priors.at<double>(c, 0) = static_cast<double>(classCount) / totalTrainSamples;
-					//result_file << "Priors(" << c << ", 0): " << priors.at<double>(c, 0) << std::endl;
 					for (int j = 0; j < 4320; ++j) {
 						double count = 0.0;
 						for (int k = 0; k < classSamples.rows; ++k) {
 							if (classSamples.at<double>(k, j) != 0) {
 								count++;
-								//result_file << "Class Sample value: " << classSamples.at<double>(k, j) << std::endl;
+								
 							}
 						}
 						if (count == 0) {
 							likelihood.at<double>(c, j) = (count + 1) / (classCount + C);
-							//result_file << "Count is 0 at " << c << ", " << j << std::endl;;
 						}
 						else {
 							likelihood.at<double>(c, j) = count / classCount;
-							//result_file << "Count is not 0 at " << c << ", " << j << std::endl;;
 						}
-						//result_file << "Likehood(" << c << ", " << j << "): " << likelihood.at<double>(c, j) << std::endl;
 					}
 				}
 
@@ -2607,26 +2468,21 @@ int main()
 				std::ofstream result_file("C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/evaluation_results_single_image_hog.txt", std::ios::app);
 				if (result_file.is_open()) {
 					result_file << "\n--------------------------------------\n";
-					const int C = 36; // Number of classes
-					const int d = 4320; // Feature size for HOG
+					const int C = 36; 
+					const int d = 4320;
 					show = true;
-					// Resize the image to the expected size
 					Mat resized;
-					cv::resize(binarized, resized, cv::Size(128, 64)); // Resize to match HOG computation dimensions
+					cv::resize(binarized, resized, cv::Size(128, 64)); 
 					imshow("Resized", resized);
-					// Compute HOG features for the image
 					std::vector<double> hog_features;
-					computeHOG(resized, 8, 2, 9, hog_features); // Example: 8x8 cells, 2x2 blocks, 9 bins
-
+					computeHOG(resized, 8, 2, 9, hog_features); 
 					if (hog_features.empty()) {
 						result_file << "Error: HOG feature vector is empty!" << std::endl;
 						break;
 					}
-
 					show = false;
 					std::vector<Mat> trainImages[C];
 					Mat X, y;
-
 					srand(static_cast<unsigned int>(time(0)));
 
 					for (int c = 0; c < C; ++c) {
@@ -2647,7 +2503,7 @@ int main()
 						for (int index = 1; ; ++index) {
 							char fname[256];
 							sprintf(fname, "%s/%s_%d.png", folderPath.c_str(), prefix.c_str(), index);
-							Mat img = imread(fname, 0); // Load image in grayscale
+							Mat img = imread(fname, 0); 
 							if (img.empty()) break;
 							filenames.push_back(std::string(fname));
 						}
@@ -2661,7 +2517,7 @@ int main()
 						for (int i = 0; i < numTrain; ++i) {
 							Mat img = imread(filenames[i], 0);
 							Mat resized;
-							cv::resize(img, resized, cv::Size(128, 64)); // Resize to fit HOG feature computation
+							cv::resize(img, resized, cv::Size(128, 64)); 
 							Mat binarized = basicGlobalThresholding(resized);
 							trainImages[c].push_back(binarized);
 						}
@@ -2671,30 +2527,25 @@ int main()
 					for (int c = 0; c < C; ++c) {
 						totalTrainSamples += trainImages[c].size();
 					}
-
 					X = Mat(totalTrainSamples, 4320, CV_64FC1);
 					y = Mat(totalTrainSamples, 1, CV_64FC1);
-
-					// Prepare feature matrix for a single image
 					Mat X_test(1, d, CV_64FC1);
 					Mat hog_mat(hog_features);
-					hog_mat = hog_mat.reshape(1, 1); // Flatten the feature vector
+					hog_mat = hog_mat.reshape(1, 1); 
 					hog_mat.convertTo(hog_mat, CV_64FC1);
 					hog_mat.copyTo(X_test.row(0));
 
 					int trainIndex = 0;
 					for (int c = 0; c < C; ++c) {
 						for (size_t i = 0; i < trainImages[c].size(); ++i) {
-							// Compute HOG features for the training images
 							std::vector<double> hog_features;
-							computeHOG(trainImages[c][i], 8, 2, 9, hog_features);  // Example: 8x8 cells, 2x2 blocks, 9 bins
-							//result_file << "HOG feature size: " << hog_features.size() << std::endl;
+							computeHOG(trainImages[c][i], 8, 2, 9, hog_features);  
 							if (hog_features.empty()) {
 								result_file << "Error: HOG feature vector is empty!" << std::endl;
-								continue; // Skip this image if features are not computed
+								continue; 
 							}
 							Mat hog_mat(hog_features);
-							hog_mat = hog_mat.reshape(1, 1); // Flatten the feature vector
+							hog_mat = hog_mat.reshape(1, 1); 
 							hog_mat.convertTo(hog_mat, CV_64FC1);
 							try {
 								hog_mat.copyTo(X.row(trainIndex));
@@ -2702,21 +2553,16 @@ int main()
 							catch (const cv::Exception& e) {
 								result_file << "OpenCV exception: " << e.what() << std::endl;
 							}
-
 							y.at<double>(trainIndex, 0) = c;
 							trainIndex++;
 						}
 					}
-
 					Mat priors(C, 1, CV_64FC1);
 					Mat likelihood(C, d, CV_64FC1);
-
 					for (int c = 0; c < C; ++c) {
 						Mat classSamples = X.rowRange(trainIndex * c / C, trainIndex * (c + 1) / C);
 						int classCount = classSamples.rows;
-
 						priors.at<double>(c, 0) = static_cast<double>(classCount) / totalTrainSamples;
-
 						for (int j = 0; j < 4320; ++j) {
 							double count = 0.0;
 							for (int k = 0; k < classSamples.rows; ++k) {
@@ -2725,13 +2571,9 @@ int main()
 							likelihood.at<double>(c, j) = (count == 0) ? (count + 1) / (classCount + C) : count / classCount;
 						}
 					}
-
-					// Predict the class using Bayes classifier
 					int predictedClass = classifyBayes(X_test.row(0), priors, likelihood);
-
 					result_file << "Predicted class: " << predictedClass << std::endl;
 				}
-
 				result_file.close();
 			}
 		}
@@ -2742,7 +2584,7 @@ int main()
 			if (result_file.is_open()) {
 				result_file << "\n--------------------------------------\n";
 				const int C = 36;
-				const int d = 128 * 64; // Adjust the feature size based on HOG (number of features per image)
+				const int d = 128 * 64; 
 				show = false;
 				std::vector<Mat> trainImages, testImages;
 				std::vector<int> trainLabels, testLabels;
@@ -2768,29 +2610,23 @@ int main()
 					for (int index = 1; ; ++index) {
 						char fname[256];
 						sprintf(fname, "%s/%s_%d.png", folderPath.c_str(), prefix.c_str(), index);
-						Mat img = imread(fname, 0); // Load image in grayscale
+						Mat img = imread(fname, 0); 
 						if (img.empty()) break;
 						filenames.push_back(std::string(fname));
 					}
-
 					std::random_device rd;
 					std::mt19937 g(rd());
 					std::shuffle(filenames.begin(), filenames.end(), g);
-
 					size_t trainSize = filenames.size() * 0.8;
-
 					for (size_t i = 0; i < filenames.size(); ++i) {
 						cv::Mat img = cv::imread(filenames[i], 0);
 						cv::resize(img, img, cv::Size(128, 64));
 						img = basicGlobalThresholding(img);
-
 						std::vector<double> hogFeatures;
 						computeHOG(img, 8, 2, 9, hogFeatures);
-
 						cv::Mat featureMat(hogFeatures);
 						featureMat = featureMat.reshape(1, 1);
 						featureMat.convertTo(featureMat, CV_32F);
-
 						if (i < trainSize) {
 							trainImages.push_back(featureMat);
 							trainLabels.push_back(c);
@@ -2809,7 +2645,6 @@ int main()
 				cv::Mat(trainLabels).convertTo(y_train, CV_32S);
 				cv::vconcat(testImages, X_test);
 				cv::Mat(testLabels).convertTo(y_test, CV_32S);
-
 				cv::Mat priors(C, 1, CV_64FC1);
 				cv::Mat likelihood(C, d, CV_64FC1, cv::Scalar(1.0));
 
@@ -2818,24 +2653,19 @@ int main()
 					int classCount = classSamples.rows;
 					classSamples.convertTo(classSamples, CV_64F);
 					priors.at<double>(c, 0) = static_cast<double>(classCount) / X_train.rows;
-					//result_file << "Priors(" << c << ", 0): " << priors.at<double>(c, 0) << std::endl;
 					for (int j = 0; j < 4320; ++j) {
 						double count = 0.0;
 						for (int k = 0; k < classSamples.rows; ++k) {
 							if (classSamples.at<double>(k, j) != 0) {
 								count++;
-								//result_file << "Class Sample value: " << classSamples.at<double>(k, j) << std::endl;
 							}
 						}
 						if (count == 0) {
 							likelihood.at<double>(c, j) = (count + 1) / (classCount + C);
-							//result_file << "Count is 0 at " << c << ", " << j << std::endl;;
 						}
 						else {
 							likelihood.at<double>(c, j) = count / classCount;
-							//result_file << "Count is not 0 at " << c << ", " << j << std::endl;;
 						}
-						//result_file << "Likehood(" << c << ", " << j << "): " << likelihood.at<double>(c, j) << std::endl;
 					}
 				}
 
@@ -2849,28 +2679,21 @@ int main()
 					int predictedClass = classifyBayes(img, priors, likelihood);
 					predictedClasses.push_back(predictedClass);
 				}
-
-				// If you need to store the classifiers (though now it's just predicted classes, not actual classifiers)
-				//std::vector<std::shared_ptr<cv::ml::NormalBayesClassifier>> classifiers;
 				std::vector<std::shared_ptr<cv::ml::StatModel>> classifiers;
 
-				// SVM
 				auto svm = cv::ml::SVM::create();
 				svm->setKernel(cv::ml::SVM::LINEAR);
 				svm->train(X_train, cv::ml::ROW_SAMPLE, y_train);
 				classifiers.push_back(svm);
 
-				// Random Forest
 				auto rf = cv::ml::RTrees::create();
 				rf->train(X_train, cv::ml::ROW_SAMPLE, y_train);
 				classifiers.push_back(rf);
 
-				// KNN
 				auto knn = cv::ml::KNearest::create();
 				knn->train(X_train, cv::ml::ROW_SAMPLE, y_train);
 				classifiers.push_back(knn);
 
-				// Perform voting classification
 				std::vector<cv::Mat> testSamplesVec;
 				for (int i = 0; i < X_test.rows; ++i) {
 					testSamplesVec.push_back(X_test.row(i));
@@ -2879,7 +2702,6 @@ int main()
 				std::vector<std::shared_ptr<CustomBayesClassifier>> customClassifiers;
 				customClassifiers.push_back(std::make_shared<CustomBayesClassifier>(priors, likelihood));
 
-				// Prepare validation data (using test set for validation)
 				std::vector<cv::Mat> validationSamplesVec;
 				std::vector<int> validationLabels;
 
@@ -2888,16 +2710,13 @@ int main()
 				}
 				validationLabels = std::vector<int>(testLabels.begin(), testLabels.end());
 
-				// Compute classifier weights based on validation data
-				double bayesWeightScale = 1.2; // Adjust importance of Naive Bayes
+				double bayesWeightScale = 1.2; 
 				std::vector<double> weights = computeClassifierWeights(
 					classifiers, customClassifiers, validationSamplesVec, validationLabels, bayesWeightScale);
 
-				// Split weights into classifier and custom classifier weights
 				std::vector<double> classifierWeights(weights.begin(), weights.begin() + classifiers.size());
 				std::vector<double> customClassifierWeights(weights.begin() + classifiers.size(), weights.end());
 
-				// Perform weighted voting classification
 				std::vector<int> predictions = weightedVotingClassifier(
 					classifiers, customClassifiers, classifierWeights, customClassifierWeights, testSamplesVec);
 
