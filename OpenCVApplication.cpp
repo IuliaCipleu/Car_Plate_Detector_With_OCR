@@ -1738,16 +1738,23 @@ void computeHistograms(const cv::Mat& magnitude, const cv::Mat& angle, int nbins
 	}
 }
 
-
 void computeHOG(const cv::Mat& image, int cell_size, int block_size, int nbins, std::vector<double>& hog_features) {
 	// Resize the image to 128x64
+	if (show) {
+		imshow("Input", image);
+	}
 	cv::Mat image_resized;
-	cv::resize(image, image_resized, cv::Size(64, 64));
-
+	cv::resize(image, image_resized, cv::Size(128, 64));
+	if (show) {
+		imshow("Resized", image);
+	}
 	// Compute gradient magnitude and angle
 	cv::Mat magnitude, angle;
 	computeGradients(image_resized, magnitude, angle);
-
+	if (show) {
+		imshow("Magnitude", magnitude);
+		imshow("Angle", angle);
+	}
 	// Compute cell histograms
 	std::vector<std::vector<double>> cell_histograms;
 	computeHistograms(magnitude, angle, nbins, cell_size, cell_histograms);
@@ -1775,6 +1782,7 @@ void computeHOG(const cv::Mat& image, int cell_size, int block_size, int nbins, 
 		// Append block histogram to the HOG feature vector
 		hog_features.insert(hog_features.end(), block_hist.begin(), block_hist.end());
 	}
+	waitKey();
 }
 
 Mat invertedBW(const Mat& src) {
@@ -1805,6 +1813,61 @@ Mat binaryThreshold(Mat src) {
 		}
 	}
 	return dst;
+}
+
+std::vector<int> votingClassifier(
+	const std::vector<std::shared_ptr<cv::ml::StatModel>>& classifiers,
+	const std::vector<cv::Mat>& testSamples,
+	const std::vector<double>& weights = {}
+) {
+	size_t numClassifiers = classifiers.size();
+	size_t numSamples = testSamples.size();
+
+	// Set default weights if none provided
+	std::vector<double> effectiveWeights = weights.empty() ? std::vector<double>(numClassifiers, 1.0) : weights;
+
+	// Ensure weights match the number of classifiers
+	if (effectiveWeights.size() != numClassifiers) {
+		throw std::runtime_error("Number of weights must match the number of classifiers.");
+	}
+
+	// Store all predictions
+	std::vector<std::vector<int>> allPredictions(numClassifiers, std::vector<int>(numSamples));
+
+	// Collect predictions from each classifier
+	for (size_t clfIdx = 0; clfIdx < numClassifiers; ++clfIdx) {
+		for (size_t sampleIdx = 0; sampleIdx < numSamples; ++sampleIdx) {
+			cv::Mat sample = testSamples[sampleIdx];
+			int prediction = static_cast<int>(classifiers[clfIdx]->predict(sample));
+			allPredictions[clfIdx][sampleIdx] = prediction;
+		}
+	}
+
+	// Perform weighted voting
+	std::vector<int> finalPredictions(numSamples);
+	for (size_t sampleIdx = 0; sampleIdx < numSamples; ++sampleIdx) {
+		std::unordered_map<int, double> classVotes;
+
+		// Accumulate weighted votes for each class
+		for (size_t clfIdx = 0; clfIdx < numClassifiers; ++clfIdx) {
+			int predictedClass = allPredictions[clfIdx][sampleIdx];
+			classVotes[predictedClass] += effectiveWeights[clfIdx];
+		}
+
+		// Select the class with the highest weighted votes
+		int bestClass = -1;
+		double maxVotes = -1.0;
+		for (const auto& [classLabel, voteCount] : classVotes) {
+			if (voteCount > maxVotes) {
+				maxVotes = voteCount;
+				bestClass = classLabel;
+			}
+		}
+
+		finalPredictions[sampleIdx] = bestClass;
+	}
+
+	return finalPredictions;
 }
 
 std::string getFilenameFromPath(const std::string& filepath) {
@@ -1910,6 +1973,7 @@ int main()
 		printf(" 3 - HOG\n");
 		printf(" 4 - Naive Bayes on Characters Dataset\n");
 		printf(" 5 - Naive Bayes and HOG on Characters Dataset\n");
+		printf(" 6 - Naive Bayes and HOG on Single Image\n");
 		printf(" 0 - Exit\n\n");
 		printf("Option: ");
 		scanf("%d", &op);
@@ -2125,7 +2189,7 @@ int main()
 			while (openFileDlg(fname))
 			{
 				Mat image = imread(fname, cv::IMREAD_GRAYSCALE);
-
+				show = true;
 				if (image.empty()) {
 					std::cerr << "Error: Unable to load the image." << std::endl;
 					return -1;
@@ -2138,16 +2202,19 @@ int main()
 
 				// Vector to store the final HOG features
 				std::vector<double> hog_features;
-
+				imshow("Input", image);
+				Mat binarized = basicGlobalThresholding(image);
+				imshow("Binarized", binarized);
+				Mat invertedImage = invertedBW(binarized);
 				// Compute HOG features
-				computeHOG(image, cell_size, block_size, nbins, hog_features);
-
-				// Print the first 10 HOG features (optional)
-				std::cout << "Computed HOG Features (first 10): ";
-				for (int i = 0; i < 10 && i < hog_features.size(); i++) {
+				computeHOG(invertedImage, cell_size, block_size, nbins, hog_features);
+				std::cout << "Computed HOG Features size: " << hog_features.size() <<std::endl;
+				std::cout << "Computed HOG Features: ";
+				for (int i = 0; i < hog_features.size(); i++) {
 					std::cout << hog_features[i] << " ";
 				}
 				std::cout << std::endl;
+				waitKey();
 			}
 		}
 		break;
@@ -2324,8 +2391,8 @@ int main()
 			if (result_file.is_open()) {
 				result_file << "\n--------------------------------------\n";
 				const int C = 36;
-				const int d = 64 * 64; // Adjust the feature size based on HOG (number of features per image)
-
+				const int d = 128 * 64; // Adjust the feature size based on HOG (number of features per image)
+				show = false;
 				std::vector<Mat> trainImages[C], testImages[C];
 				Mat X, y, X_test, y_test;
 
@@ -2364,15 +2431,17 @@ int main()
 					for (int i = 0; i < numTrain; ++i) {
 						Mat img = imread(filenames[i], 0);
 						Mat resized;
-						cv::resize(img, resized, cv::Size(64, 64)); // Resize to fit HOG feature computation
-						trainImages[c].push_back(resized);
+						cv::resize(img, resized, cv::Size(128, 64)); 
+						Mat binarized = basicGlobalThresholding(resized);
+						trainImages[c].push_back(binarized);
 					}
 
 					for (int i = numTrain; i < filenames.size(); ++i) {
 						Mat img = imread(filenames[i], 0);
 						Mat resized;
-						cv::resize(img, resized, cv::Size(64, 64));
-						testImages[c].push_back(resized);
+						cv::resize(img, resized, cv::Size(128, 64));
+						Mat binarized = basicGlobalThresholding(resized);
+						testImages[c].push_back(binarized);
 					}
 				}
 
@@ -2382,9 +2451,9 @@ int main()
 					totalTestSamples += testImages[c].size();
 				}
 
-				X = Mat(totalTrainSamples, 2016, CV_64FC1);
+				X = Mat(totalTrainSamples, 4320, CV_64FC1);
 				y = Mat(totalTrainSamples, 1, CV_64FC1);
-				X_test = Mat(totalTestSamples, 2016, CV_64FC1);
+				X_test = Mat(totalTestSamples, 4320, CV_64FC1);
 				y_test = Mat(totalTestSamples, 1, CV_64FC1);
 
 				int trainIndex = 0;
@@ -2412,7 +2481,7 @@ int main()
 						trainIndex++;
 					}
 				}
-
+				result_file << "Train Index: " << trainIndex << std::endl;
 				int testIndex = 0;
 				for (int c = 0; c < C; ++c) {
 					for (size_t i = 0; i < testImages[c].size(); ++i) {
@@ -2427,7 +2496,7 @@ int main()
 						testIndex++;
 					}
 				}
-
+				result_file << "Test Index: " << testIndex << std::endl;
 				Mat priors(C, 1, CV_64FC1);
 				Mat likelihood(C, d, CV_64FC1, Scalar(1));
 
@@ -2436,13 +2505,23 @@ int main()
 					int classCount = classSamples.rows;
 
 					priors.at<double>(c, 0) = static_cast<double>(classCount) / totalTrainSamples;
-
-					for (int j = 0; j < 2016; ++j) {
+					//result_file << "Priors(" << c << ", 0): " << priors.at<double>(c, 0) << std::endl;
+					for (int j = 0; j < 4320; ++j) {
 						double count = 0.0;
 						for (int k = 0; k < classSamples.rows; ++k) {
-							count += (classSamples.at<double>(k, j) == 255 ? 1.0 : 0.0);
+							if (classSamples.at<double>(k, j) != 0) {
+								count++;
+								//result_file << "Class Sample value: " << classSamples.at<double>(k, j) << std::endl;
+							}
 						}
-						likelihood.at<double>(c, j) = (count == 0) ? (count + 1) / (classCount + C) : count / classCount;
+						if (count == 0){
+							likelihood.at<double>(c, j) = (count + 1) / (classCount + C);
+							//result_file << "Count is 0 at " << c << ", " << j << std::endl;;
+						} else{
+							likelihood.at<double>(c, j) = count / classCount;
+							//result_file << "Count is not 0 at " << c << ", " << j << std::endl;;
+						}
+						//result_file << "Likehood(" << c << ", " << j << "): " << likelihood.at<double>(c, j) << std::endl;
 					}
 				}
 
@@ -2450,7 +2529,7 @@ int main()
 				Mat confusionMatrix = Mat::zeros(C, C, CV_32S);
 
 				for (int i = 0; i < X_test.rows; ++i) {
-					Mat img = X_test.row(i).reshape(1, 2016);
+					Mat img = X_test.row(i).reshape(1, 4320);
 					int trueClass = static_cast<int>(y_test.at<double>(i, 0));
 					int predictedClass = classifyBayes(img, priors, likelihood);
 
@@ -2467,6 +2546,147 @@ int main()
 				result_file << "Confusion Matrix: " << std::endl << confusionMatrix << std::endl;
 			}
 			result_file.close();
+		}
+		break;
+		case 6:
+		{
+			char fname[256];
+			while (openFileDlg(fname))
+			{
+				Mat img = imread(fname, cv::IMREAD_GRAYSCALE);
+				imshow("Input", img);
+				Mat binarized = basicGlobalThresholding(img);
+				imshow("Binarized", binarized);
+				std::ofstream result_file("C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/evaluation_results_single_image_hog.txt", std::ios::app);
+				if (result_file.is_open()) {
+					result_file << "\n--------------------------------------\n";
+					const int C = 36; // Number of classes
+					const int d = 4320; // Feature size for HOG
+					show = true;
+					// Resize the image to the expected size
+					Mat resized;
+					cv::resize(binarized, resized, cv::Size(128, 64)); // Resize to match HOG computation dimensions
+					imshow("Resized", resized);
+					// Compute HOG features for the image
+					std::vector<double> hog_features;
+					computeHOG(resized, 8, 2, 9, hog_features); // Example: 8x8 cells, 2x2 blocks, 9 bins
+
+					if (hog_features.empty()) {
+						result_file << "Error: HOG feature vector is empty!" << std::endl;
+						break;
+					}
+
+					show = false;
+					std::vector<Mat> trainImages[C];
+					Mat X, y;
+
+					srand(static_cast<unsigned int>(time(0)));
+
+					for (int c = 0; c < C; ++c) {
+						std::string folderName;
+						std::string prefix;
+
+						if (c < 10) {
+							folderName = "digit_" + std::to_string(c);
+							prefix = std::to_string(c);
+						}
+						else {
+							folderName = "letter_" + std::string(1, char('A' + (c - 10)));
+							prefix = std::string(1, char('A' + (c - 10)));
+						}
+
+						std::string folderPath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/characters/" + folderName;
+						std::vector<std::string> filenames;
+						for (int index = 1; ; ++index) {
+							char fname[256];
+							sprintf(fname, "%s/%s_%d.png", folderPath.c_str(), prefix.c_str(), index);
+							Mat img = imread(fname, 0); // Load image in grayscale
+							if (img.empty()) break;
+							filenames.push_back(std::string(fname));
+						}
+
+						std::random_device rd;
+						std::mt19937 g(rd());
+						std::shuffle(filenames.begin(), filenames.end(), g);
+
+						int numTrain = static_cast<int>(filenames.size() * 0.8);
+
+						for (int i = 0; i < numTrain; ++i) {
+							Mat img = imread(filenames[i], 0);
+							Mat resized;
+							cv::resize(img, resized, cv::Size(128, 64)); // Resize to fit HOG feature computation
+							Mat binarized = basicGlobalThresholding(resized);
+							trainImages[c].push_back(binarized);
+						}
+					}
+
+					int totalTrainSamples = 0, totalTestSamples = 0;
+					for (int c = 0; c < C; ++c) {
+						totalTrainSamples += trainImages[c].size();
+					}
+
+					X = Mat(totalTrainSamples, 4320, CV_64FC1);
+					y = Mat(totalTrainSamples, 1, CV_64FC1);
+
+					// Prepare feature matrix for a single image
+					Mat X_test(1, d, CV_64FC1);
+					Mat hog_mat(hog_features);
+					hog_mat = hog_mat.reshape(1, 1); // Flatten the feature vector
+					hog_mat.convertTo(hog_mat, CV_64FC1);
+					hog_mat.copyTo(X_test.row(0));
+
+					int trainIndex = 0;
+					for (int c = 0; c < C; ++c) {
+						for (size_t i = 0; i < trainImages[c].size(); ++i) {
+							// Compute HOG features for the training images
+							std::vector<double> hog_features;
+							computeHOG(trainImages[c][i], 8, 2, 9, hog_features);  // Example: 8x8 cells, 2x2 blocks, 9 bins
+							//result_file << "HOG feature size: " << hog_features.size() << std::endl;
+							if (hog_features.empty()) {
+								result_file << "Error: HOG feature vector is empty!" << std::endl;
+								continue; // Skip this image if features are not computed
+							}
+							Mat hog_mat(hog_features);
+							hog_mat = hog_mat.reshape(1, 1); // Flatten the feature vector
+							hog_mat.convertTo(hog_mat, CV_64FC1);
+							try {
+								hog_mat.copyTo(X.row(trainIndex));
+							}
+							catch (const cv::Exception& e) {
+								result_file << "OpenCV exception: " << e.what() << std::endl;
+							}
+
+							y.at<double>(trainIndex, 0) = c;
+							trainIndex++;
+						}
+					}
+					
+					Mat priors(C, 1, CV_64FC1); 
+					Mat likelihood(C, d, CV_64FC1); 
+
+					for (int c = 0; c < C; ++c) {
+						Mat classSamples = X.rowRange(trainIndex * c / C, trainIndex * (c + 1) / C);
+						int classCount = classSamples.rows;
+
+						priors.at<double>(c, 0) = static_cast<double>(classCount) / totalTrainSamples;
+
+						for (int j = 0; j < 4320; ++j) {
+							double count = 0.0;
+							for (int k = 0; k < classSamples.rows; ++k) {
+								count += (classSamples.at<double>(k, j) == 255 ? 1.0 : 0.0);
+							}
+							likelihood.at<double>(c, j) = (count == 0) ? (count + 1) / (classCount + C) : count / classCount;
+						}
+					}
+
+					// Predict the class using Bayes classifier
+					int predictedClass = classifyBayes(X_test.row(0), priors, likelihood);
+
+					result_file << "Predicted class: " << predictedClass << std::endl;
+				}
+
+				result_file.close();
+			}
 		}
 		break;
 
