@@ -1835,91 +1835,43 @@ Mat binaryThreshold(Mat src) {
 	return dst;
 }
 
-//std::vector<int> votingClassifier(
-//	const std::vector<std::shared_ptr<cv::ml::StatModel>>& classifiers,
-//	const std::vector<cv::Mat>& testSamples,
-//	const std::vector<double>& weights = {}
-//) {
-//	size_t numClassifiers = classifiers.size();
-//	size_t numSamples = testSamples.size();
-//
-//	// Set default weights if none provided
-//	std::vector<double> effectiveWeights = weights.empty() ? std::vector<double>(numClassifiers, 1.0) : weights;
-//
-//	// Ensure weights match the number of classifiers
-//	if (effectiveWeights.size() != numClassifiers) {
-//		throw std::runtime_error("Number of weights must match the number of classifiers.");
-//	}
-//
-//	// Store all predictions
-//	std::vector<std::vector<int>> allPredictions(numClassifiers, std::vector<int>(numSamples));
-//
-//	// Collect predictions from each classifier
-//	for (size_t clfIdx = 0; clfIdx < numClassifiers; ++clfIdx) {
-//		for (size_t sampleIdx = 0; sampleIdx < numSamples; ++sampleIdx) {
-//			cv::Mat sample = testSamples[sampleIdx];
-//			int prediction = static_cast<int>(classifiers[clfIdx]->predict(sample));
-//			allPredictions[clfIdx][sampleIdx] = prediction;
-//		}
-//	}
-//
-//	// Perform weighted voting
-//	std::vector<int> finalPredictions(numSamples);
-//	for (size_t sampleIdx = 0; sampleIdx < numSamples; ++sampleIdx) {
-//		std::unordered_map<int, double> classVotes;
-//
-//		// Accumulate weighted votes for each class
-//		for (size_t clfIdx = 0; clfIdx < numClassifiers; ++clfIdx) {
-//			int predictedClass = allPredictions[clfIdx][sampleIdx];
-//			classVotes[predictedClass] += effectiveWeights[clfIdx];
-//		}
-//
-//		// Select the class with the highest weighted votes
-//		int bestClass = -1;
-//		double maxVotes = -1.0;
-//		for (const auto& [classLabel, voteCount] : classVotes) {
-//			if (voteCount > maxVotes) {
-//				maxVotes = voteCount;
-//				bestClass = classLabel;
-//			}
-//		}
-//
-//		finalPredictions[sampleIdx] = bestClass;
-//	}
-//
-//	return finalPredictions;
-//}
-std::vector<int> votingClassifier(
+std::vector<int> weightedVotingClassifier(
 	const std::vector<std::shared_ptr<cv::ml::StatModel>>& classifiers,
 	const std::vector<std::shared_ptr<CustomBayesClassifier>>& customClassifiers,
+	const std::vector<double>& classifierWeights,
+	const std::vector<double>& customClassifierWeights,
 	const std::vector<cv::Mat>& samples) {
+
+	// Ensure the weight vectors match the number of classifiers
+	assert(classifiers.size() == classifierWeights.size());
+	assert(customClassifiers.size() == customClassifierWeights.size());
 
 	std::vector<int> predictions;
 
 	for (const auto& sample : samples) {
-		std::map<int, int> classVotes;
+		std::map<int, double> classVotes;
 
-		// Predict with standard classifiers
-		for (const auto& classifier : classifiers) {
-			int prediction = classifier->predict(sample);
-			classVotes[prediction]++;
+		// Predict with standard classifiers and accumulate weighted votes
+		for (size_t i = 0; i < classifiers.size(); ++i) {
+			int prediction = classifiers[i]->predict(sample);
+			classVotes[prediction] += classifierWeights[i]; // Add weighted vote
 		}
 
-		// Predict with custom Bayes classifier
-		for (const auto& customClassifier : customClassifiers) {
-			int prediction = customClassifier->predict(sample);
-			classVotes[prediction]++;
+		// Predict with custom Bayes classifiers and accumulate weighted votes
+		for (size_t i = 0; i < customClassifiers.size(); ++i) {
+			int prediction = customClassifiers[i]->predict(sample);
+			classVotes[prediction] += customClassifierWeights[i]; // Add weighted vote
 		}
 
-		// Find the class with the most votes
+		// Find the class with the highest weighted vote
 		auto maxElement = std::max_element(classVotes.begin(), classVotes.end(),
 			[](const auto& a, const auto& b) { return a.second < b.second; });
-		predictions.push_back(maxElement->first);
+
+		predictions.push_back(maxElement->first); // Append the winning class
 	}
 
 	return predictions;
 }
-
 
 std::string getFilenameFromPath(const std::string& filepath) {
 	// Find the position of the last occurrence of '/'
@@ -2884,7 +2836,13 @@ int main()
 				std::vector<std::shared_ptr<CustomBayesClassifier>> customClassifiers;
 				customClassifiers.push_back(std::make_shared<CustomBayesClassifier>(priors, likelihood));
 
-				std::vector<int> predictions = votingClassifier(classifiers, customClassifiers, testSamplesVec);
+				// Assign weights to classifiers
+				std::vector<double> classifierWeights = { 1.0, 0.8, 1.2 }; // Example weights
+				std::vector<double> customClassifierWeights = { 1.0 }; // Example weights for custom classifiers
+
+				// Perform weighted voting
+				std::vector<int> predictions = weightedVotingClassifier(
+					classifiers, customClassifiers, classifierWeights, customClassifierWeights, testSamplesVec);
 
 				for (size_t i = 0; i < testLabels.size(); ++i) {
 					if (predictions[i] == testLabels[i]) {
