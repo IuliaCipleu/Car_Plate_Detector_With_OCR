@@ -1733,6 +1733,52 @@ void computeGradients(const cv::Mat& image, cv::Mat& magnitude, cv::Mat& angle) 
 	}
 }
 
+std::vector<double> computeClassifierWeights(
+	const std::vector<std::shared_ptr<cv::ml::StatModel>>& classifiers,
+	const std::vector<std::shared_ptr<CustomBayesClassifier>>& customClassifiers,
+	const std::vector<cv::Mat>& validationSamples,
+	const std::vector<int>& validationLabels,
+	double bayesWeightScale) {
+
+	std::vector<double> weights(classifiers.size() + customClassifiers.size(), 0.0);
+	std::vector<double> performances;
+
+	// Evaluate performance of predefined classifiers
+	for (size_t i = 0; i < classifiers.size(); ++i) {
+		int correct = 0;
+		for (size_t j = 0; j < validationSamples.size(); ++j) {
+			int predicted = classifiers[i]->predict(validationSamples[j]);
+			if (predicted == validationLabels[j]) {
+				correct++;
+			}
+		}
+		double accuracy = static_cast<double>(correct) / validationSamples.size();
+		performances.push_back(accuracy);
+	}
+
+	// Evaluate performance of custom Naive Bayes classifiers
+	for (size_t i = 0; i < customClassifiers.size(); ++i) {
+		int correct = 0;
+		for (size_t j = 0; j < validationSamples.size(); ++j) {
+			int predicted = customClassifiers[i]->predict(validationSamples[j]);
+			if (predicted == validationLabels[j]) {
+				correct++;
+			}
+		}
+		double accuracy = static_cast<double>(correct) / validationSamples.size();
+		performances.push_back(accuracy * bayesWeightScale); // Scale for Naive Bayes
+	}
+
+	// Normalize weights
+	double sumPerformance = std::accumulate(performances.begin(), performances.end(), 0.0);
+	for (size_t i = 0; i < performances.size(); ++i) {
+		weights[i] = performances[i] / sumPerformance;
+	}
+
+	return weights;
+}
+
+
 void computeHistograms(const cv::Mat& magnitude, const cv::Mat& angle, int nbins, int cell_size,
 	std::vector<std::vector<double>>& histograms) {
 	for (int i = 0; i < magnitude.rows; i += cell_size) {
@@ -1842,7 +1888,6 @@ std::vector<int> weightedVotingClassifier(
 	const std::vector<double>& customClassifierWeights,
 	const std::vector<cv::Mat>& samples) {
 
-	// Ensure the weight vectors match the number of classifiers
 	assert(classifiers.size() == classifierWeights.size());
 	assert(customClassifiers.size() == customClassifierWeights.size());
 
@@ -1851,23 +1896,20 @@ std::vector<int> weightedVotingClassifier(
 	for (const auto& sample : samples) {
 		std::map<int, double> classVotes;
 
-		// Predict with standard classifiers and accumulate weighted votes
 		for (size_t i = 0; i < classifiers.size(); ++i) {
 			int prediction = classifiers[i]->predict(sample);
-			classVotes[prediction] += classifierWeights[i]; // Add weighted vote
+			classVotes[prediction] += classifierWeights[i];
 		}
 
-		// Predict with custom Bayes classifiers and accumulate weighted votes
 		for (size_t i = 0; i < customClassifiers.size(); ++i) {
 			int prediction = customClassifiers[i]->predict(sample);
-			classVotes[prediction] += customClassifierWeights[i]; // Add weighted vote
+			classVotes[prediction] += customClassifierWeights[i];
 		}
 
-		// Find the class with the highest weighted vote
 		auto maxElement = std::max_element(classVotes.begin(), classVotes.end(),
 			[](const auto& a, const auto& b) { return a.second < b.second; });
 
-		predictions.push_back(maxElement->first); // Append the winning class
+		predictions.push_back(maxElement->first);
 	}
 
 	return predictions;
@@ -1977,7 +2019,7 @@ int main()
 		printf(" 4 - Naive Bayes on Characters Dataset\n");
 		printf(" 5 - Naive Bayes and HOG on Characters Dataset\n");
 		printf(" 6 - Naive Bayes and HOG on Single Image\n");
-		printf(" 7 - Voting\n");
+		printf(" 7 - Weighted Voting mechanism on Characters Dataset\n");
 		printf(" 0 - Exit\n\n");
 		printf("Option: ");
 		scanf("%d", &op);
@@ -2212,7 +2254,7 @@ int main()
 				Mat invertedImage = invertedBW(binarized);
 				// Compute HOG features
 				computeHOG(invertedImage, cell_size, block_size, nbins, hog_features);
-				std::cout << "Computed HOG Features size: " << hog_features.size() <<std::endl;
+				std::cout << "Computed HOG Features size: " << hog_features.size() << std::endl;
 				std::cout << "Computed HOG Features: ";
 				for (int i = 0; i < hog_features.size(); i++) {
 					std::cout << hog_features[i] << " ";
@@ -2366,14 +2408,14 @@ int main()
 
 						/*if (predictedClass == 0 || trueClass == 35)
 						{*/
-							confusionMatrix.at<int>(predictedClass, trueClass)++;
-							if (trueClass == predictedClass) correct++;
+						confusionMatrix.at<int>(predictedClass, trueClass)++;
+						if (trueClass == predictedClass) correct++;
 						/*}
 						else {
 							confusionMatrix.at<int>(predictedClass, trueClass+1)++;
 							if (trueClass + 1 == predictedClass) correct++;
 						}*/
-						
+
 						total++;
 					}
 
@@ -2435,7 +2477,7 @@ int main()
 					for (int i = 0; i < numTrain; ++i) {
 						Mat img = imread(filenames[i], 0);
 						Mat resized;
-						cv::resize(img, resized, cv::Size(128, 64)); 
+						cv::resize(img, resized, cv::Size(128, 64));
 						Mat binarized = basicGlobalThresholding(resized);
 						trainImages[c].push_back(binarized);
 					}
@@ -2518,10 +2560,11 @@ int main()
 								//result_file << "Class Sample value: " << classSamples.at<double>(k, j) << std::endl;
 							}
 						}
-						if (count == 0){
+						if (count == 0) {
 							likelihood.at<double>(c, j) = (count + 1) / (classCount + C);
 							//result_file << "Count is 0 at " << c << ", " << j << std::endl;;
-						} else{
+						}
+						else {
 							likelihood.at<double>(c, j) = count / classCount;
 							//result_file << "Count is not 0 at " << c << ", " << j << std::endl;;
 						}
@@ -2664,9 +2707,9 @@ int main()
 							trainIndex++;
 						}
 					}
-					
-					Mat priors(C, 1, CV_64FC1); 
-					Mat likelihood(C, d, CV_64FC1); 
+
+					Mat priors(C, 1, CV_64FC1);
+					Mat likelihood(C, d, CV_64FC1);
 
 					for (int c = 0; c < C; ++c) {
 						Mat classSamples = X.rowRange(trainIndex * c / C, trainIndex * (c + 1) / C);
@@ -2733,7 +2776,7 @@ int main()
 					std::random_device rd;
 					std::mt19937 g(rd());
 					std::shuffle(filenames.begin(), filenames.end(), g);
-					
+
 					size_t trainSize = filenames.size() * 0.8;
 
 					for (size_t i = 0; i < filenames.size(); ++i) {
@@ -2802,9 +2845,9 @@ int main()
 				std::vector<int> predictedClasses;
 
 				for (int i = 0; i < X_test.rows; ++i) {
-					Mat img = X_test.row(i).reshape(1, 4320); 
+					Mat img = X_test.row(i).reshape(1, 4320);
 					int predictedClass = classifyBayes(img, priors, likelihood);
-					predictedClasses.push_back(predictedClass);					
+					predictedClasses.push_back(predictedClass);
 				}
 
 				// If you need to store the classifiers (though now it's just predicted classes, not actual classifiers)
@@ -2836,11 +2879,25 @@ int main()
 				std::vector<std::shared_ptr<CustomBayesClassifier>> customClassifiers;
 				customClassifiers.push_back(std::make_shared<CustomBayesClassifier>(priors, likelihood));
 
-				// Assign weights to classifiers
-				std::vector<double> classifierWeights = { 1.0, 0.8, 1.2 }; // Example weights
-				std::vector<double> customClassifierWeights = { 1.0 }; // Example weights for custom classifiers
+				// Prepare validation data (using test set for validation)
+				std::vector<cv::Mat> validationSamplesVec;
+				std::vector<int> validationLabels;
 
-				// Perform weighted voting
+				for (int i = 0; i < X_test.rows; ++i) {
+					validationSamplesVec.push_back(X_test.row(i));
+				}
+				validationLabels = std::vector<int>(testLabels.begin(), testLabels.end());
+
+				// Compute classifier weights based on validation data
+				double bayesWeightScale = 1.2; // Adjust importance of Naive Bayes
+				std::vector<double> weights = computeClassifierWeights(
+					classifiers, customClassifiers, validationSamplesVec, validationLabels, bayesWeightScale);
+
+				// Split weights into classifier and custom classifier weights
+				std::vector<double> classifierWeights(weights.begin(), weights.begin() + classifiers.size());
+				std::vector<double> customClassifierWeights(weights.begin() + classifiers.size(), weights.end());
+
+				// Perform weighted voting classification
 				std::vector<int> predictions = weightedVotingClassifier(
 					classifiers, customClassifiers, classifierWeights, customClassifierWeights, testSamplesVec);
 
