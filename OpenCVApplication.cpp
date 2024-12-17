@@ -2329,7 +2329,7 @@ int main()
 		break;
 		case 2:
 		{
-			char folderPath[MAX_PATH] = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/dataset/imagesForTesting/plates";
+			std::string folderPath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/dataset/imagesForTesting/plates";
 			double percentageV, percentageH, percentageG, percentageB, percentageCh = 0.0;
 			int d, v, h, g, b, ch;
 			printf("Give number of dilations: ");
@@ -2405,13 +2405,29 @@ int main()
 					Mat dilatedPlate = repeatDilationVertical(thLicense, d);
 
 					Mat roi = cutBorders(dilatedPlate, percentageV, percentageH);
-					Mat projection = computeProjections(roi);
-					std::vector<Mat> characters = segmentCharactersUsingProj(roi, projection, percentageB, percentageCh);
-					printf("Characters found: %d", characters.size());
-					std::string folderPathStr(folderToSave);
-					for (size_t i = 0; i < characters.size(); ++i) {
-						std::string characterFilePath = folderPathStr + "/" + std::to_string(i) + ".png";
-						imwrite(characterFilePath, characters[i]);
+					std::vector<Rect> boundingBoxes;
+					twoPassComponentLabelingNew(roi, boundingBoxes);
+
+					std::vector<Mat> candidates = findLicensePlateCandidates(roi, boundingBoxes);
+
+					if (candidates.size() == 0) {
+						printf("No license plate candidates found. Adding the entire ROI as a candidate.\n");
+						candidates.push_back(roi); 
+					}
+
+					for (size_t i = 0; i < candidates.size(); i++) {
+					
+						std::string candidateFolderPath = folderToSave + "/candidate" + std::to_string(i);
+						if (!fs::exists(candidateFolderPath)) {
+							fs::create_directory(candidateFolderPath);
+						}
+
+						Mat projection = computeProjections(candidates[i]);
+						std::vector<Mat> characters = segmentCharactersUsingProj(candidates[i], projection, percentageB, percentageCh);
+						for (size_t j = 0; j < characters.size(); ++j) {
+							std::string characterFilePath = candidateFolderPath + "/" + std::to_string(j) + ".png";
+							imwrite(characterFilePath, characters[j]);
+						}
 					}
 					waitKey();
 				}
