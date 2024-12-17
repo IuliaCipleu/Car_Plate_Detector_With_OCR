@@ -1551,6 +1551,36 @@ Mat cutBordersDynamic(const Mat& binary, double verticalThresholdRatio, double h
 	}
 }
 
+Mat cutPlateRegion(const Mat& binary) {
+	// Invert the image: license plates are white (high intensity) on black background
+	Mat inverted;
+	bitwise_not(binary, inverted);
+
+	// Find contours of white regions
+	std::vector<std::vector<Point>> contours;
+	findContours(inverted, contours, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
+
+	// Locate the largest contour (assume it's the plate)
+	Rect boundingBox;
+	int maxArea = 0;
+	for (const auto& contour : contours) {
+		Rect box = boundingRect(contour);
+		int area = box.width * box.height;
+		if (area > maxArea) {  // Keep the largest white region
+			boundingBox = box;
+			maxArea = area;
+		}
+	}
+
+	// Crop to the bounding box
+	if (maxArea > 0) {
+		return binary(boundingBox);
+	}
+	else {
+		std::cerr << "No valid region found. Returning original image." << std::endl;
+		return binary.clone();
+	}
+}
 
 Mat computeProjections(const Mat& binary_img) {
 	int h = binary_img.rows;
@@ -1590,6 +1620,9 @@ double percentageBlack(const Mat& src) {
 			}
 		}
 	}
+	if (show) {
+		std::cout<<"Black percentage: "<< (double)(blackCount / total)<<std::endl;
+	}
 	return (double)(blackCount / total);
 }
 
@@ -1612,9 +1645,9 @@ std::vector<Mat> segmentCharactersUsingProj(const Mat& roi, const Mat& projectio
 		}
 	}
 	Mat projCropped = projection(Rect(0, topMarginCut, w, h - topMarginCut));
-	if (show) {
+	/*if (show) {
 		imshow("Projection Cropped", projCropped);
-	}
+	}*/
 	std::vector<int> projectionVert(w, 0);
 
 	for (int j = 0; j < w; j++) {
@@ -1870,6 +1903,144 @@ Mat binaryThreshold(Mat src) {
 	return dst;
 }
 
+void twoPassComponentLabelingNew(const Mat& src, std::vector<Rect>& boundingBoxes) {
+	Mat labels(src.rows, src.cols, CV_32SC1, Scalar(0));
+	int h = src.rows;
+	int w = src.cols;
+	int label = 0;
+	std::vector<std::vector<int>> edges(10000);
+	Mat inverted = invertedBW(src);
+
+	// First pass: Assign labels and build equivalence graph
+	for (int i = 0; i < h; i++) {
+		for (int j = 0; j < w; j++) {
+			if (inverted.at<uchar>(i, j) == 0 && labels.at<int>(i, j) == 0) {
+				std::vector<int> neighbors;
+
+				if (i > 0 && j > 0 && labels.at<int>(i - 1, j - 1) > 0) neighbors.push_back(labels.at<int>(i - 1, j - 1));
+				if (i > 0 && labels.at<int>(i - 1, j) > 0) neighbors.push_back(labels.at<int>(i - 1, j));
+				if (i > 0 && j + 1 < w && labels.at<int>(i - 1, j + 1) > 0) neighbors.push_back(labels.at<int>(i - 1, j + 1));
+				if (j > 0 && labels.at<int>(i, j - 1) > 0) neighbors.push_back(labels.at<int>(i, j - 1));
+
+				if (neighbors.empty()) {
+					label++;
+					labels.at<int>(i, j) = label;
+				}
+				else {
+					int minLabel = *min_element(neighbors.begin(), neighbors.end());
+					labels.at<int>(i, j) = minLabel;
+
+					for (int n : neighbors) {
+						if (n != minLabel) {
+							edges[minLabel].push_back(n);
+							edges[n].push_back(minLabel);
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Resolve label equivalences using BFS
+	std::vector<int> newLabels(label + 1, 0);
+	int newLabel = 0;
+	for (int i = 1; i <= label; i++) {
+		if (newLabels[i] == 0) {
+			newLabel++;
+			std::queue<int> q;
+			newLabels[i] = newLabel;
+			q.push(i);
+
+			while (!q.empty()) {
+				int current = q.front();
+				q.pop();
+				for (int neighbor : edges[current]) {
+					if (newLabels[neighbor] == 0) {
+						newLabels[neighbor] = newLabel;
+						q.push(neighbor);
+					}
+				}
+			}
+		}
+	}
+
+	// Second pass: Collect bounding boxes
+	boundingBoxes.clear();
+	std::vector<std::vector<Point>> contours(newLabel);
+
+	for (int i = 0; i < h; i++) {
+		for (int j = 0; j < w; j++) {
+			int lbl = labels.at<int>(i, j);
+			if (lbl > 0) {
+				int finalLabel = newLabels[lbl] - 1;
+				contours[finalLabel].push_back(Point(j, i));
+			}
+		}
+	}
+
+	// Generate bounding rectangles for each labeled region
+	for (const auto& contour : contours) {
+		if (!contour.empty()) {
+			boundingBoxes.push_back(boundingRect(contour));
+		}
+	}
+}
+
+double edgeDensity(const Mat& src) {
+	Mat edges;
+	Canny(src, edges, 50, 150); // Apply Canny edge detection
+
+	int edgeCount = countNonZero(edges); // Count edge pixels
+	int totalPixels = src.cols * src.rows;
+	if (show) {
+		std::cout << "Edge Density: " << (double)edgeCount / totalPixels << std::endl;
+	}
+	return (double)edgeCount / totalPixels;
+}
+
+bool isValidAspectRatio(const Rect& box) {
+	double aspectRatio = (double)box.width / box.height;
+	if (show) {
+		std::cout << "Aspect ratio: " << (double)aspectRatio << std::endl;
+	}
+	return (aspectRatio >= 2.0 && aspectRatio <= 5.0);
+}
+
+std::vector<Mat> findLicensePlateCandidates(const Mat& src, const std::vector<Rect>& boundingBoxes) {
+	std::vector<Mat> candidates;
+	int index = 1;
+	for (const auto& box : boundingBoxes) {
+		//std::cout << "Candidate " << index << std::endl;
+		// Extract region of interest (ROI)
+		Mat roi = src(box);
+
+		// Check black pixel percentage
+		double blackPercent = percentageBlack(roi);
+		if (blackPercent < 0.3 || blackPercent > 0.6) {
+			continue; // Reject if black percentage is not in range
+		}
+
+		// Check edge density
+		double density = edgeDensity(roi);
+		if (density < 0.1) {
+			continue; // Reject if edge density is too low
+		}
+
+		// Check aspect ratio
+		if (!isValidAspectRatio(box)) {
+			continue; // Reject if aspect ratio is invalid
+		}
+
+		// If all checks pass, save the candidate
+		candidates.push_back(roi);
+		//std::cout << "Candidate " << index << " accepted" << std::endl;
+		index++;
+	}
+
+	return candidates;
+}
+
+
 std::vector<int> weightedVotingClassifier(
 	const std::vector<std::shared_ptr<cv::ml::StatModel>>& classifiers,
 	const std::vector<std::shared_ptr<CustomBayesClassifier>>& customClassifiers,
@@ -2083,10 +2254,38 @@ int main()
 				Mat dilatedPlate = repeatDilationVertical(thLicense, d);
 				imshow("Dilated Plate", dilatedPlate);
 
-				//Mat roi = cutBorders(dilatedPlate, percentageV, percentageH);
-				Mat roi = cutBordersDynamic(dilatedPlate, percentageV, percentageH);
+				Mat roi = cutBorders(dilatedPlate, percentageV, percentageH);
+				//Mat roi = cutBordersDynamic(dilatedPlate, percentageV, percentageH);
 				imshow("Cut Borders", roi);
-				Mat projection = computeProjections(roi);
+
+				std::vector<Rect> boundingBoxes;
+				twoPassComponentLabelingNew(roi, boundingBoxes);
+
+				// Draw bounding boxes on the image
+				Mat boxed;
+				cvtColor(roi, boxed, COLOR_GRAY2BGR);
+				for (const auto& box : boundingBoxes) {
+					rectangle(boxed, box, Scalar(0, 255, 0), 2);
+				}
+
+				// Show the result
+				imshow("Labeled Components with Bounding Boxes", boxed);
+
+				// Find license plate candidates
+				std::vector<Mat> candidates = findLicensePlateCandidates(roi, boundingBoxes);
+
+				if (candidates.size() == 0) {
+					printf("No license plate candidates found. Adding the entire ROI as a candidate.\n");
+					candidates.push_back(roi); // Add the ROI to candidates
+				}
+
+				// Display candidates
+				for (size_t i = 0; i < candidates.size(); i++) {
+					std::string windowName = "Candidate " + std::to_string(i);
+					imshow(windowName, candidates[i]);
+				}
+
+				/*Mat projection = computeProjections(roi);
 				imshow("Projection", projection);
 				std::vector<Mat> characters = segmentCharactersUsingProj(roi, projection, percentageB, percentageCh);
 				printf("Characters found: %d", characters.size());
@@ -2094,6 +2293,34 @@ int main()
 					std::string characterFilePath = folderPath + "/" + std::to_string(i) + ".png";
 					imwrite(characterFilePath, characters[i]);
 					imshow("Character " + std::to_string(i), characters[i]);
+				}*/
+
+				// Display candidates and process each one
+				for (size_t i = 0; i < candidates.size(); i++) {
+					// Create a window to display each candidate
+					std::string windowName = "Candidate " + std::to_string(i);
+					imshow(windowName, candidates[i]);
+
+					// Create a subfolder for the current candidate
+					std::string candidateFolderPath = folderPath + "/candidate" + std::to_string(i);
+					if (!fs::exists(candidateFolderPath)) {
+						fs::create_directory(candidateFolderPath);
+					}
+
+					// Compute projections and segment characters for the current candidate
+					Mat projection = computeProjections(candidates[i]);
+					imshow("Projection for Candidate " + std::to_string(i), projection);
+
+					// Segment characters based on the given thresholds
+					std::vector<Mat> characters = segmentCharactersUsingProj(candidates[i], projection, percentageB, percentageCh);
+					printf("Candidate %d - Characters found: %d\n", static_cast<int>(i), static_cast<int>(characters.size()));
+
+					// Save each segmented character into the candidate subfolder
+					for (size_t j = 0; j < characters.size(); ++j) {
+						std::string characterFilePath = candidateFolderPath + "/" + std::to_string(j) + ".png";
+						imwrite(characterFilePath, characters[j]);
+						imshow("Candidate " + std::to_string(i) + " - Character " + std::to_string(j), characters[j]);
+					}
 				}
 
 				waitKey();
