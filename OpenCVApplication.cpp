@@ -2197,9 +2197,15 @@ int main()
 
 				std::string folderPath = basePath + "/" + folderName;
 
-				if (!fs::exists(folderPath))
-				{
-					fs::create_directory(folderPath);
+				if (fs::exists(folderPath)) {
+					for (const auto& entry : fs::directory_iterator(folderPath)) {
+						if (fs::is_directory(entry)) {
+							fs::remove_all(entry); // Remove the entire subfolder
+						}
+					}
+				}
+				else {
+					fs::create_directory(folderPath); // Create the folder if it doesn't exist
 				}
 
 				show = true;
@@ -2284,16 +2290,6 @@ int main()
 					std::string windowName = "Candidate " + std::to_string(i);
 					imshow(windowName, candidates[i]);
 				}
-
-				/*Mat projection = computeProjections(roi);
-				imshow("Projection", projection);
-				std::vector<Mat> characters = segmentCharactersUsingProj(roi, projection, percentageB, percentageCh);
-				printf("Characters found: %d", characters.size());
-				for (size_t i = 0; i < characters.size(); ++i) {
-					std::string characterFilePath = folderPath + "/" + std::to_string(i) + ".png";
-					imwrite(characterFilePath, characters[i]);
-					imshow("Character " + std::to_string(i), characters[i]);
-				}*/
 
 				// Display candidates and process each one
 				for (size_t i = 0; i < candidates.size(); i++) {
@@ -2454,7 +2450,7 @@ int main()
 				Mat binarized = basicGlobalThresholding(image);
 				imshow("Binarized", binarized);
 				Mat invertedImage = invertedBW(binarized);
-				computeHOG(invertedImage, cell_size, block_size, nbins, hog_features);
+				computeHOG(image, cell_size, block_size, nbins, hog_features);
 				std::cout << "Computed HOG Features size: " << hog_features.size() << std::endl;
 				std::cout << "Computed HOG Features: ";
 				for (int i = 0; i < hog_features.size(); i++) {
