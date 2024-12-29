@@ -2139,6 +2139,13 @@ void writeResultsToCSV5Columns(const std::string& filename, const std::vector<st
 	outputFile.close();
 }
 
+struct CandidateResult {
+	std::string plateName;  // The plate name
+	std::string candidateName;  // The candidate folder name
+	int predictedLabel;  // The prediction result for this candidate
+	int actualLabel;  // The actual label of the plate (for comparison)
+};
+
 int main()
 {
 	cv::utils::logging::setLogLevel(cv::utils::logging::LOG_LEVEL_FATAL);
@@ -2158,6 +2165,7 @@ int main()
 		printf(" 5 - Naive Bayes and HOG on Characters Dataset\n");
 		printf(" 6 - Naive Bayes and HOG on Single Image\n");
 		printf(" 7 - Weighted Voting mechanism on Characters Dataset\n");
+		printf(" 8 - Weighted Voting mechanism on Resulted Characters Dataset\n");
 		printf(" 0 - Exit\n\n");
 		printf("Option: ");
 		scanf("%d", &op);
@@ -3019,6 +3027,233 @@ int main()
 				std::vector<double> classifierWeights(weights.begin(), weights.begin() + classifiers.size());
 				std::vector<double> customClassifierWeights(weights.begin() + classifiers.size(), weights.end());
 
+				std::vector<int> predictions = weightedVotingClassifier(
+					classifiers, customClassifiers, classifierWeights, customClassifierWeights, testSamplesVec);
+
+				for (size_t i = 0; i < testLabels.size(); ++i) {
+					if (predictions[i] == testLabels[i]) {
+						correct++;
+					}
+					confusionMatrix.at<int>(predictions[i], testLabels[i])++;
+					total++;
+				}
+				double accuracy = static_cast<double>(correct) / total;
+				result_file << "Accuracy: " << accuracy << std::endl;
+				for (int c = 0; c < C; ++c) {
+					int TP = confusionMatrix.at<int>(c, c);
+					int FN = cv::sum(confusionMatrix.row(c))[0] - TP;
+					int FP = cv::sum(confusionMatrix.col(c))[0] - TP;
+					int TN = cv::sum(confusionMatrix)[0] - (TP + FP + FN);
+
+					double precision = TP / static_cast<double>(TP + FP);
+					double recall = TP / static_cast<double>(TP + FN);
+					double f1Score = 2 * (precision * recall) / (precision + recall);
+
+					result_file << "Class " << c << ": Precision = " << precision
+						<< ", Recall = " << recall
+						<< ", F1-Score = " << f1Score << std::endl;
+				}
+
+			}
+			result_file.close();
+		}
+		break;
+		case 8:
+		{
+			show = false;
+			std::ofstream result_file("C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/evaluation_results_case8.txt", std::ios::app);
+			if (result_file.is_open()) {
+				result_file << "\n--------------------------------------\n";
+
+				const std::string baseTrainPath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/characters/";
+				const std::string baseTestPath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/charactersResulted/";
+				const int C = 36; // 0-9 digits + 26 letters
+				const int d = 128 * 64; // feature dimensions
+				std::vector<Mat> trainImages, testImages;
+				std::vector<int> trainLabels, testLabels;
+				int trainIndex =0 , testIndex =0 ;
+
+				result_file << "Training phase" << std::endl;
+				for (int c = 0; c < C; ++c) {
+					std::string folderName = (c < 10)
+						? "digit_" + std::to_string(c)
+						: "letter_" + std::string(1, char('A' + (c - 10)));
+					std::string folderPath = baseTrainPath + folderName;
+					result_file << "Folder " << folderPath << std::endl;
+					std::string prefix = (c < 10)
+						? std::to_string(c)
+						: std::string(1, char('A' + (c - 10)));
+
+					for (int index = 1; ; ++index) {
+						char fname[256];
+						sprintf(fname, "%s/%s_%d.png", folderPath.c_str(), prefix.c_str(), index);
+						Mat img = imread(fname, 0);
+						if (img.empty()) break;
+
+						cv::resize(img, img, cv::Size(128, 64));
+						img = basicGlobalThresholding(img);
+
+						std::vector<double> hogFeatures;
+						computeHOG(img, 8, 2, 9, hogFeatures);
+
+						cv::Mat featureMat(hogFeatures);
+						featureMat = featureMat.reshape(1, 1);
+						featureMat.convertTo(featureMat, CV_32F);
+
+						trainImages.push_back(featureMat);
+						trainLabels.push_back(c);
+					}
+				}
+
+				cv::Mat X_train, y_train;
+				cv::vconcat(trainImages, X_train);
+				cv::Mat(trainLabels).convertTo(y_train, CV_32S);
+				std::vector<CandidateResult> candidateResults;
+
+				result_file << "Testing phase" << std::endl;
+				for (const auto& plateFolder : std::filesystem::directory_iterator(baseTestPath)) {
+					if (std::filesystem::is_directory(plateFolder)) {
+						std::string plateName = plateFolder.path().filename().string(); // Get folder name (e.g., "007PLATECOM")
+
+						// Ensure plateName is not empty
+						if (plateName.empty()) {
+							continue;
+						}
+						result_file << "Plate: " << plateName << std::endl;
+						// Process each candidate folder inside the plate folder
+						for (const auto& candidateFolder : std::filesystem::directory_iterator(plateFolder.path())) {
+							if (std::filesystem::is_directory(candidateFolder)) {
+
+								int charIndex = 0; // For keeping track of which character we're dealing with
+								// Iterate through the images in the candidate folder
+								for (const auto& imgFile : std::filesystem::directory_iterator(candidateFolder.path())) {
+									if (imgFile.path().extension() == ".png") {
+										Mat img = imread(imgFile.path().string(), 0);
+										if (img.empty()) continue;
+
+										// Ensure charIndex is within bounds of plateName length
+										if (charIndex >= plateName.size()) {
+											break; // Exit if charIndex exceeds plateName length
+										}
+
+										cv::resize(img, img, cv::Size(128, 64)); // Resize the image to match input size
+										img = basicGlobalThresholding(img); // Apply thresholding to binarize the image
+
+										std::vector<double> hogFeatures;
+										//show = true;
+										computeHOG(img, 8, 2, 9, hogFeatures); // Extract HOG features
+										//show = false;
+
+										cv::Mat featureMat(hogFeatures);
+										featureMat = featureMat.reshape(1, 1); // Reshape into a single row
+										featureMat.convertTo(featureMat, CV_32F); // Convert to 32-bit float
+
+										// Map each character in the plate name to its corresponding label
+										char character = plateName[charIndex];
+										int label = -1; // Initialize label
+
+										// Handle digits and letters
+										if (character >= '0' && character <= '9') {
+											label = character - '0'; // Label digits 0-9 as 0-9
+										}
+										else if (character >= 'A' && character <= 'Z') {
+											label = character - 'A' + 10; // Label letters A-Z as 10-35
+										}
+
+										// Ensure the label is valid
+										if (label != -1) {
+											testImages.push_back(featureMat);
+											testLabels.push_back(label); // Use the correct label
+										}
+
+										charIndex++; // Move to the next character in the plate name
+									}
+								}
+							}
+						}
+					}
+				}
+
+				cv::Mat X_test, y_test;
+				cv::vconcat(testImages, X_test);
+				cv::Mat(testLabels).convertTo(y_test, CV_32S);
+				cv::Mat priors(C, 1, CV_64FC1);
+				cv::Mat likelihood(C, d, CV_64FC1, cv::Scalar(1.0));
+
+				result_file << "Bayes Classifier" << std::endl;
+				for (int c = 0; c < C; ++c) {
+					Mat classSamples = X_train.rowRange(trainIndex * c / C, trainIndex * (c + 1) / C);
+					int classCount = classSamples.rows;
+					classSamples.convertTo(classSamples, CV_64F);
+					priors.at<double>(c, 0) = static_cast<double>(classCount) / X_train.rows;
+					for (int j = 0; j < 4320; ++j) {
+						double count = 0.0;
+						for (int k = 0; k < classSamples.rows; ++k) {
+							if (classSamples.at<double>(k, j) != 0) {
+								count++;
+							}
+						}
+						if (count == 0) {
+							likelihood.at<double>(c, j) = (count + 1) / (classCount + C);
+						}
+						else {
+							likelihood.at<double>(c, j) = count / classCount;
+						}
+					}
+				}
+
+				int correct = 0, total = 0;
+				Mat confusionMatrix = Mat::zeros(C, C, CV_32S);
+
+				std::vector<int> predictedClasses;
+
+				for (int i = 0; i < X_test.rows; ++i) {
+					Mat img = X_test.row(i).reshape(1, 4320);
+					int predictedClass = classifyBayes(img, priors, likelihood);
+					predictedClasses.push_back(predictedClass);
+				}
+				std::vector<std::shared_ptr<cv::ml::StatModel>> classifiers;
+
+				result_file << "SVM Classifier" << std::endl;
+				auto svm = cv::ml::SVM::create();
+				svm->setKernel(cv::ml::SVM::LINEAR);
+				svm->train(X_train, cv::ml::ROW_SAMPLE, y_train);
+				classifiers.push_back(svm);
+
+				result_file << "Random Forest Classifier" << std::endl;
+				auto rf = cv::ml::RTrees::create();
+				rf->train(X_train, cv::ml::ROW_SAMPLE, y_train);
+				classifiers.push_back(rf);
+
+				result_file << "KNN Classifier" << std::endl;
+				auto knn = cv::ml::KNearest::create();
+				knn->train(X_train, cv::ml::ROW_SAMPLE, y_train);
+				classifiers.push_back(knn);
+
+				std::vector<cv::Mat> testSamplesVec;
+				for (int i = 0; i < X_test.rows; ++i) {
+					testSamplesVec.push_back(X_test.row(i));
+				}
+
+				std::vector<std::shared_ptr<CustomBayesClassifier>> customClassifiers;
+				customClassifiers.push_back(std::make_shared<CustomBayesClassifier>(priors, likelihood));
+
+				std::vector<cv::Mat> validationSamplesVec;
+				std::vector<int> validationLabels;
+
+				for (int i = 0; i < X_test.rows; ++i) {
+					validationSamplesVec.push_back(X_test.row(i));
+				}
+				validationLabels = std::vector<int>(testLabels.begin(), testLabels.end());
+
+				double bayesWeightScale = 1.2;
+				std::vector<double> weights = computeClassifierWeights(
+					classifiers, customClassifiers, validationSamplesVec, validationLabels, bayesWeightScale);
+
+				std::vector<double> classifierWeights(weights.begin(), weights.begin() + classifiers.size());
+				std::vector<double> customClassifierWeights(weights.begin() + classifiers.size(), weights.end());
+
+				result_file << "Weighted Voting" << std::endl;
 				std::vector<int> predictions = weightedVotingClassifier(
 					classifiers, customClassifiers, classifierWeights, customClassifierWeights, testSamplesVec);
 
