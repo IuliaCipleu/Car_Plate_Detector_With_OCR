@@ -1458,9 +1458,9 @@ Mat cutBorders(const Mat& binary, double percentageV, double percentageH) {
 	for (int col = 0; col < vertical_hist.cols; ++col) {
 		if (vertical_hist.at<int>(0, col) > thresholdVertically) {
 			if (left == -1) {
-				left = col; 
+				left = col;
 			}
-			right = col; 
+			right = col;
 		}
 	}
 
@@ -1474,15 +1474,15 @@ Mat cutBorders(const Mat& binary, double percentageV, double percentageH) {
 	for (int row = 0; row < horizontal_hist.rows; ++row) {
 		if (horizontal_hist.at<int>(row, 0) > thresholdHorizontally) {
 			if (top == -1) {
-				top = row; 
+				top = row;
 			}
-			bottom = row; 
+			bottom = row;
 		}
 	}
 	Mat license_plate = binary.clone();
 	if (left != -1 && right != -1 && top != -1 && bottom != -1) {
-		Rect roi(left, top, right - left, bottom - top); 
-		license_plate = binary(roi); 
+		Rect roi(left, top, right - left, bottom - top);
+		license_plate = binary(roi);
 	}
 	else {
 		printf("License plate boundaries not found!\n");
@@ -1621,7 +1621,7 @@ double percentageBlack(const Mat& src) {
 		}
 	}
 	if (show) {
-		std::cout<<"Black percentage: "<< (double)(blackCount / total)<<std::endl;
+		std::cout << "Black percentage: " << (double)(blackCount / total) << std::endl;
 	}
 	return (double)(blackCount / total);
 }
@@ -1634,11 +1634,11 @@ std::vector<Mat> segmentCharactersUsingProj(const Mat& roi, const Mat& projectio
 	for (int i = 0; i < h; i++) {
 		int blackPixels = 0;
 		for (int j = 0; j < w; j++) {
-			if (projection.at<uchar>(i, j) == 0) { 
+			if (projection.at<uchar>(i, j) == 0) {
 				blackPixels++;
 			}
 		}
-		if (blackPixels < w * thresholdProj) { 
+		if (blackPixels < w * thresholdProj) {
 			topMarginCut = i + 1;
 			printf("Top Margin Cut %d with value of black pixels: %d\n", i, blackPixels);
 			break;
@@ -1652,7 +1652,7 @@ std::vector<Mat> segmentCharactersUsingProj(const Mat& roi, const Mat& projectio
 
 	for (int j = 0; j < w; j++) {
 		for (int i = 0; i < h - topMarginCut; i++) {
-			if (projCropped.at<uchar>(i, j) == 0) { 
+			if (projCropped.at<uchar>(i, j) == 0) {
 				projectionVert[j]++;
 			}
 		}
@@ -1663,11 +1663,11 @@ std::vector<Mat> segmentCharactersUsingProj(const Mat& roi, const Mat& projectio
 
 	for (int j = 0; j < w; j++) {
 		if (projectionVert[j] > 0 && !inSegment) {
-			boundaries.push_back(j);  
+			boundaries.push_back(j);
 			inSegment = true;
 		}
 		else if (projectionVert[j] == 0 && inSegment) {
-			boundaries.push_back(j - 1);  
+			boundaries.push_back(j - 1);
 			inSegment = false;
 		}
 	}
@@ -1680,7 +1680,7 @@ std::vector<Mat> segmentCharactersUsingProj(const Mat& roi, const Mat& projectio
 		int startCol = boundaries[i];
 		int endCol = boundaries[i + 1];
 		Rect charRect(startCol, topMarginCut, endCol - startCol + 1, h - topMarginCut);
-		Mat character = roi(charRect).clone(); 
+		Mat character = roi(charRect).clone();
 		printf("Percentage Black: %f\n", percentageBlack(character));
 		if (threasholdBlack < percentageBlack(character) && percentageBlack(character) < 0.95) {
 			characters.push_back(character);
@@ -1808,7 +1808,7 @@ std::vector<double> computeClassifierWeights(
 			}
 		}
 		double accuracy = static_cast<double>(correct) / validationSamples.size();
-		performances.push_back(accuracy * bayesWeightScale); 
+		performances.push_back(accuracy * bayesWeightScale);
 	}
 
 	double sumPerformance = std::accumulate(performances.begin(), performances.end(), 0.0);
@@ -1855,7 +1855,7 @@ void computeHOG(const cv::Mat& image, int cell_size, int block_size, int nbins, 
 	std::vector<std::vector<double>> cell_histograms;
 	computeHistograms(magnitude, angle, nbins, cell_size, cell_histograms);
 	for (size_t i = 0; i < cell_histograms.size() - (block_size - 1) * cell_size; i++) {
-		std::vector<double> block_hist;		
+		std::vector<double> block_hist;
 		for (int b = 0; b < block_size * block_size; b++) {
 			block_hist.insert(block_hist.end(), cell_histograms[i + b].begin(), cell_histograms[i + b].end());
 		}
@@ -1863,7 +1863,7 @@ void computeHOG(const cv::Mat& image, int cell_size, int block_size, int nbins, 
 		for (double value : block_hist) {
 			norm_factor += value * value;
 		}
-		norm_factor = std::sqrt(norm_factor + 1e-6); 
+		norm_factor = std::sqrt(norm_factor + 1e-6);
 
 		for (double& value : block_hist) {
 			value /= norm_factor;
@@ -2095,7 +2095,7 @@ std::string cleanText(const std::string& text) {
 }
 
 void writeResultsToCSV(const std::string& filename, const std::vector<std::pair<std::string, std::string>>& dataset) {
-	std::ofstream outputFile(filename, std::ios::app); 
+	std::ofstream outputFile(filename, std::ios::app);
 
 	if (!outputFile.is_open()) {
 		std::cerr << "Failed to open file: " << filename << std::endl;
@@ -2124,7 +2124,7 @@ std::vector<std::string> listFiles(const std::string& directoryPath) {
 }
 
 void writeResultsToCSV5Columns(const std::string& filename, const std::vector<std::tuple<std::string, int, int, int, int>>& dataset) {
-	std::ofstream outputFile(filename, std::ios::app); 
+	std::ofstream outputFile(filename, std::ios::app);
 	if (!outputFile.is_open()) {
 		std::cerr << "Failed to open file: " << filename << std::endl;
 		return;
@@ -2144,6 +2144,11 @@ struct CandidateResult {
 	std::string candidateName;  // The candidate folder name
 	int predictedLabel;  // The prediction result for this candidate
 	int actualLabel;  // The actual label of the plate (for comparison)
+};
+
+struct TestImageInfo {
+	int testIndex;
+	std::string plateName;
 };
 
 int main()
@@ -2416,11 +2421,11 @@ int main()
 
 					if (candidates.size() == 0) {
 						printf("No license plate candidates found. Adding the entire ROI as a candidate.\n");
-						candidates.push_back(roi); 
+						candidates.push_back(roi);
 					}
 
 					for (size_t i = 0; i < candidates.size(); i++) {
-					
+
 						std::string candidateFolderPath = folderToSave + "/candidate" + std::to_string(i);
 						if (!fs::exists(candidateFolderPath)) {
 							fs::create_directory(candidateFolderPath);
@@ -2449,9 +2454,9 @@ int main()
 					std::cerr << "Error: Unable to load the image." << std::endl;
 					return -1;
 				}
-				int cell_size = 8;  
-				int block_size = 2; 
-				int nbins = 9;     
+				int cell_size = 8;
+				int block_size = 2;
+				int nbins = 9;
 
 				std::vector<double> hog_features;
 				imshow("Input", image);
@@ -2483,15 +2488,15 @@ int main()
 
 					for (int c = 0; c < C; ++c) {
 						std::string folderName;
-						std::string prefix; 
+						std::string prefix;
 
 						if (c < 10) {
 							folderName = "digit_" + std::to_string(c);
-							prefix = std::to_string(c);  
+							prefix = std::to_string(c);
 						}
 						else {
 							folderName = "letter_" + std::string(1, char('A' + (c - 10)));
-							prefix = std::string(1, char('A' + (c - 10))); 
+							prefix = std::string(1, char('A' + (c - 10)));
 						}
 
 						std::string folderPath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/characters/" + folderName;
@@ -2500,7 +2505,7 @@ int main()
 							char fname[256];
 							sprintf(fname, "%s/%s_%d.png", folderPath.c_str(), prefix.c_str(), index);
 
-							Mat img = imread(fname, 0); 
+							Mat img = imread(fname, 0);
 							if (img.empty()) break;
 
 							filenames.push_back(std::string(fname));
@@ -2510,8 +2515,8 @@ int main()
 						std::mt19937 g(rd());
 						std::shuffle(filenames.begin(), filenames.end(), g);
 
-						int numTrain = static_cast<int>(filenames.size() * 0.8); 
-						int numTest = filenames.size() - numTrain; 
+						int numTrain = static_cast<int>(filenames.size() * 0.8);
+						int numTest = filenames.size() - numTrain;
 
 						for (int i = 0; i < numTrain; ++i) {
 							Mat img = imread(filenames[i], 0);
@@ -2618,7 +2623,7 @@ int main()
 			if (result_file.is_open()) {
 				result_file << "\n--------------------------------------\n";
 				const int C = 36;
-				const int d = 128 * 64; 
+				const int d = 128 * 64;
 				show = false;
 				std::vector<Mat> trainImages[C], testImages[C];
 				Mat X, y, X_test, y_test;
@@ -2641,7 +2646,7 @@ int main()
 					for (int index = 1; ; ++index) {
 						char fname[256];
 						sprintf(fname, "%s/%s_%d.png", folderPath.c_str(), prefix.c_str(), index);
-						Mat img = imread(fname, 0); 
+						Mat img = imread(fname, 0);
 						if (img.empty()) break;
 						filenames.push_back(std::string(fname));
 					}
@@ -2685,13 +2690,13 @@ int main()
 				for (int c = 0; c < C; ++c) {
 					for (size_t i = 0; i < trainImages[c].size(); ++i) {
 						std::vector<double> hog_features;
-						computeHOG(trainImages[c][i], 8, 2, 9, hog_features);  
+						computeHOG(trainImages[c][i], 8, 2, 9, hog_features);
 						if (hog_features.empty()) {
 							result_file << "Error: HOG feature vector is empty!" << std::endl;
-							continue; 
+							continue;
 						}
 						Mat hog_mat(hog_features);
-						hog_mat = hog_mat.reshape(1, 1); 
+						hog_mat = hog_mat.reshape(1, 1);
 						hog_mat.convertTo(hog_mat, CV_64FC1);
 						try {
 							hog_mat.copyTo(X.row(trainIndex));
@@ -2710,7 +2715,7 @@ int main()
 						std::vector<double> hog_features;
 						computeHOG(testImages[c][i], 8, 2, 9, hog_features);
 						Mat hog_mat(hog_features);
-						hog_mat = hog_mat.reshape(1, 1); 
+						hog_mat = hog_mat.reshape(1, 1);
 						hog_mat.convertTo(hog_mat, CV_64FC1);
 						hog_mat.copyTo(X_test.row(testIndex));
 						y_test.at<double>(testIndex, 0) = c;
@@ -2731,7 +2736,7 @@ int main()
 						for (int k = 0; k < classSamples.rows; ++k) {
 							if (classSamples.at<double>(k, j) != 0) {
 								count++;
-								
+
 							}
 						}
 						if (count == 0) {
@@ -2778,14 +2783,14 @@ int main()
 				std::ofstream result_file("C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/evaluation_results_single_image_hog.txt", std::ios::app);
 				if (result_file.is_open()) {
 					result_file << "\n--------------------------------------\n";
-					const int C = 36; 
+					const int C = 36;
 					const int d = 4320;
 					show = true;
 					Mat resized;
-					cv::resize(binarized, resized, cv::Size(128, 64)); 
+					cv::resize(binarized, resized, cv::Size(128, 64));
 					imshow("Resized", resized);
 					std::vector<double> hog_features;
-					computeHOG(resized, 8, 2, 9, hog_features); 
+					computeHOG(resized, 8, 2, 9, hog_features);
 					if (hog_features.empty()) {
 						result_file << "Error: HOG feature vector is empty!" << std::endl;
 						break;
@@ -2813,7 +2818,7 @@ int main()
 						for (int index = 1; ; ++index) {
 							char fname[256];
 							sprintf(fname, "%s/%s_%d.png", folderPath.c_str(), prefix.c_str(), index);
-							Mat img = imread(fname, 0); 
+							Mat img = imread(fname, 0);
 							if (img.empty()) break;
 							filenames.push_back(std::string(fname));
 						}
@@ -2827,7 +2832,7 @@ int main()
 						for (int i = 0; i < numTrain; ++i) {
 							Mat img = imread(filenames[i], 0);
 							Mat resized;
-							cv::resize(img, resized, cv::Size(128, 64)); 
+							cv::resize(img, resized, cv::Size(128, 64));
 							Mat binarized = basicGlobalThresholding(resized);
 							trainImages[c].push_back(binarized);
 						}
@@ -2841,7 +2846,7 @@ int main()
 					y = Mat(totalTrainSamples, 1, CV_64FC1);
 					Mat X_test(1, d, CV_64FC1);
 					Mat hog_mat(hog_features);
-					hog_mat = hog_mat.reshape(1, 1); 
+					hog_mat = hog_mat.reshape(1, 1);
 					hog_mat.convertTo(hog_mat, CV_64FC1);
 					hog_mat.copyTo(X_test.row(0));
 
@@ -2849,13 +2854,13 @@ int main()
 					for (int c = 0; c < C; ++c) {
 						for (size_t i = 0; i < trainImages[c].size(); ++i) {
 							std::vector<double> hog_features;
-							computeHOG(trainImages[c][i], 8, 2, 9, hog_features);  
+							computeHOG(trainImages[c][i], 8, 2, 9, hog_features);
 							if (hog_features.empty()) {
 								result_file << "Error: HOG feature vector is empty!" << std::endl;
-								continue; 
+								continue;
 							}
 							Mat hog_mat(hog_features);
-							hog_mat = hog_mat.reshape(1, 1); 
+							hog_mat = hog_mat.reshape(1, 1);
 							hog_mat.convertTo(hog_mat, CV_64FC1);
 							try {
 								hog_mat.copyTo(X.row(trainIndex));
@@ -2894,7 +2899,7 @@ int main()
 			if (result_file.is_open()) {
 				result_file << "\n--------------------------------------\n";
 				const int C = 36;
-				const int d = 128 * 64; 
+				const int d = 128 * 64;
 				show = false;
 				std::vector<Mat> trainImages, testImages;
 				std::vector<int> trainLabels, testLabels;
@@ -2920,7 +2925,7 @@ int main()
 					for (int index = 1; ; ++index) {
 						char fname[256];
 						sprintf(fname, "%s/%s_%d.png", folderPath.c_str(), prefix.c_str(), index);
-						Mat img = imread(fname, 0); 
+						Mat img = imread(fname, 0);
 						if (img.empty()) break;
 						filenames.push_back(std::string(fname));
 					}
@@ -3020,7 +3025,7 @@ int main()
 				}
 				validationLabels = std::vector<int>(testLabels.begin(), testLabels.end());
 
-				double bayesWeightScale = 1.2; 
+				double bayesWeightScale = 1.2;
 				std::vector<double> weights = computeClassifierWeights(
 					classifiers, customClassifiers, validationSamplesVec, validationLabels, bayesWeightScale);
 
@@ -3071,7 +3076,7 @@ int main()
 				const int d = 128 * 64; // feature dimensions
 				std::vector<Mat> trainImages, testImages;
 				std::vector<int> trainLabels, testLabels;
-				int trainIndex =0 , testIndex =0 ;
+				int trainIndex = 0, testIndex = 0;
 
 				result_file << "Training phase" << std::endl;
 				for (int c = 0; c < C; ++c) {
@@ -3079,7 +3084,7 @@ int main()
 						? "digit_" + std::to_string(c)
 						: "letter_" + std::string(1, char('A' + (c - 10)));
 					std::string folderPath = baseTrainPath + folderName;
-					result_file << "Folder " << folderPath << std::endl;
+					//result_file << "Folder " << folderPath << std::endl;
 					std::string prefix = (c < 10)
 						? std::to_string(c)
 						: std::string(1, char('A' + (c - 10)));
@@ -3109,51 +3114,10 @@ int main()
 				cv::vconcat(trainImages, X_train);
 				cv::Mat(trainLabels).convertTo(y_train, CV_32S);
 				std::vector<CandidateResult> candidateResults;
-				cv::Mat priors(C, 1, CV_64FC1);
-				cv::Mat likelihood(C, d, CV_64FC1, cv::Scalar(1.0));
+				std::vector<TestImageInfo> testImageInfoVec;
 
-				result_file << "Bayes Classifier" << std::endl;
-				for (int c = 0; c < C; ++c) {
-					Mat classSamples = X_train.rowRange(trainIndex * c / C, trainIndex * (c + 1) / C);
-					int classCount = classSamples.rows;
-					classSamples.convertTo(classSamples, CV_64F);
-					priors.at<double>(c, 0) = static_cast<double>(classCount) / X_train.rows;
-					for (int j = 0; j < 4320; ++j) {
-						double count = 0.0;
-						for (int k = 0; k < classSamples.rows; ++k) {
-							if (classSamples.at<double>(k, j) != 0) {
-								count++;
-							}
-						}
-						if (count == 0) {
-							likelihood.at<double>(c, j) = (count + 1) / (classCount + C);
-						}
-						else {
-							likelihood.at<double>(c, j) = count / classCount;
-						}
-					}
-				}
-
-				std::vector<std::shared_ptr<cv::ml::StatModel>> classifiers;
-
-				result_file << "SVM Classifier" << std::endl;
-				auto svm = cv::ml::SVM::create();
-				svm->setKernel(cv::ml::SVM::LINEAR);
-				svm->train(X_train, cv::ml::ROW_SAMPLE, y_train);
-				classifiers.push_back(svm);
-
-				result_file << "Random Forest Classifier" << std::endl;
-				auto rf = cv::ml::RTrees::create();
-				rf->train(X_train, cv::ml::ROW_SAMPLE, y_train);
-				classifiers.push_back(rf);
-
-				result_file << "KNN Classifier" << std::endl;
-				auto knn = cv::ml::KNearest::create();
-				knn->train(X_train, cv::ml::ROW_SAMPLE, y_train);
-				classifiers.push_back(knn);
 
 				result_file << "Testing phase" << std::endl;
-				std::vector<int> predictedClasses;
 				for (const auto& plateFolder : std::filesystem::directory_iterator(baseTestPath)) {
 					if (std::filesystem::is_directory(plateFolder)) {
 						std::string plateName = plateFolder.path().filename().string(); // Get folder name (e.g., "007PLATECOM")
@@ -3162,11 +3126,11 @@ int main()
 						if (plateName.empty()) {
 							continue;
 						}
-						result_file << "Plate: " << plateName << std::endl;
+						//result_file << "Plate: " << plateName << std::endl;
 						// Process each candidate folder inside the plate folder
 						for (const auto& candidateFolder : std::filesystem::directory_iterator(plateFolder.path())) {
 							if (std::filesystem::is_directory(candidateFolder)) {
-
+								result_file << candidateFolder << std::endl;
 								int charIndex = 0; // For keeping track of which character we're dealing with
 								// Iterate through the images in the candidate folder
 								for (const auto& imgFile : std::filesystem::directory_iterator(candidateFolder.path())) {
@@ -3206,16 +3170,15 @@ int main()
 										// Ensure the label is valid
 										if (label != -1) {
 											testImages.push_back(featureMat);
-											testLabels.push_back(label); // Use the correct label
-											int predictedClass = classifyBayes(featureMat, priors, likelihood);
-											predictedClasses.push_back(predictedClass);
+											testLabels.push_back(label); 
+											TestImageInfo info = { testIndex, plateName };
+											testImageInfoVec.push_back(info);
+											// ADD CANDIDATE TOO!!!!
 										}
-
-										charIndex++; // Move to the next character in the plate name
+										charIndex++;
+										testIndex++;
 									}
 								}
-								// Move here Bayes, SVM, RF, KNN, Weighted Voting and push them in candidateResults
-								
 							}
 						}
 					}
@@ -3223,19 +3186,43 @@ int main()
 
 				cv::Mat X_test, y_test;
 				cv::vconcat(testImages, X_test);
-				cv::Mat(testLabels).convertTo(y_test, CV_32S);				
+				cv::Mat(testLabels).convertTo(y_test, CV_32S);
+				cv::Mat priors(C, 1, CV_64FC1);
+				cv::Mat likelihood(C, d, CV_64FC1, cv::Scalar(1.0));
+
+				result_file << "Bayes Classifier" << std::endl;
+				for (int c = 0; c < C; ++c) {
+					Mat classSamples = X_train.rowRange(trainIndex * c / C, trainIndex * (c + 1) / C);
+					int classCount = classSamples.rows;
+					classSamples.convertTo(classSamples, CV_64F);
+					priors.at<double>(c, 0) = static_cast<double>(classCount) / X_train.rows;
+					for (int j = 0; j < 4320; ++j) {
+						double count = 0.0;
+						for (int k = 0; k < classSamples.rows; ++k) {
+							if (classSamples.at<double>(k, j) != 0) {
+								count++;
+							}
+						}
+						if (count == 0) {
+							likelihood.at<double>(c, j) = (count + 1) / (classCount + C);
+						}
+						else {
+							likelihood.at<double>(c, j) = count / classCount;
+						}
+					}
+				}
 
 				int correct = 0, total = 0;
 				Mat confusionMatrix = Mat::zeros(C, C, CV_32S);
 
-				/*std::vector<int> predictedClasses;
+				std::vector<int> predictedClasses;
 
 				for (int i = 0; i < X_test.rows; ++i) {
 					Mat img = X_test.row(i).reshape(1, 4320);
 					int predictedClass = classifyBayes(img, priors, likelihood);
 					predictedClasses.push_back(predictedClass);
-				}*/
-				/*std::vector<std::shared_ptr<cv::ml::StatModel>> classifiers;
+				}
+				std::vector<std::shared_ptr<cv::ml::StatModel>> classifiers;
 
 				result_file << "SVM Classifier" << std::endl;
 				auto svm = cv::ml::SVM::create();
@@ -3251,7 +3238,7 @@ int main()
 				result_file << "KNN Classifier" << std::endl;
 				auto knn = cv::ml::KNearest::create();
 				knn->train(X_train, cv::ml::ROW_SAMPLE, y_train);
-				classifiers.push_back(knn);*/
+				classifiers.push_back(knn);
 
 				std::vector<cv::Mat> testSamplesVec;
 				for (int i = 0; i < X_test.rows; ++i) {
@@ -3279,6 +3266,22 @@ int main()
 				result_file << "Weighted Voting" << std::endl;
 				std::vector<int> predictions = weightedVotingClassifier(
 					classifiers, customClassifiers, classifierWeights, customClassifierWeights, testSamplesVec);
+
+				// use TestImageInfo to go to each row in X_test and to print the corresponding plateName and the predictions
+				result_file << "Predictions" << std::endl;
+				for (int i = 0; i < predictions.size(); ++i) {
+					const TestImageInfo& testInfo = testImageInfoVec[i];
+					if (predictions[i] <= 9) {
+						result_file << ", Plate Name: " << testInfo.plateName
+							<< ", Predicted Class: " << predictions[i] << std::endl;
+					}
+					else {
+						char predictedChar = 'A' + (predictions[i] - 10);
+						result_file << ", Plate Name: " << testInfo.plateName
+							<< ", Predicted Class: " << predictedChar << std::endl;
+					}
+				}
+
 
 				for (size_t i = 0; i < testLabels.size(); ++i) {
 					if (predictions[i] == testLabels[i]) {
