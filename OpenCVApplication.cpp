@@ -3109,8 +3109,51 @@ int main()
 				cv::vconcat(trainImages, X_train);
 				cv::Mat(trainLabels).convertTo(y_train, CV_32S);
 				std::vector<CandidateResult> candidateResults;
+				cv::Mat priors(C, 1, CV_64FC1);
+				cv::Mat likelihood(C, d, CV_64FC1, cv::Scalar(1.0));
+
+				result_file << "Bayes Classifier" << std::endl;
+				for (int c = 0; c < C; ++c) {
+					Mat classSamples = X_train.rowRange(trainIndex * c / C, trainIndex * (c + 1) / C);
+					int classCount = classSamples.rows;
+					classSamples.convertTo(classSamples, CV_64F);
+					priors.at<double>(c, 0) = static_cast<double>(classCount) / X_train.rows;
+					for (int j = 0; j < 4320; ++j) {
+						double count = 0.0;
+						for (int k = 0; k < classSamples.rows; ++k) {
+							if (classSamples.at<double>(k, j) != 0) {
+								count++;
+							}
+						}
+						if (count == 0) {
+							likelihood.at<double>(c, j) = (count + 1) / (classCount + C);
+						}
+						else {
+							likelihood.at<double>(c, j) = count / classCount;
+						}
+					}
+				}
+
+				std::vector<std::shared_ptr<cv::ml::StatModel>> classifiers;
+
+				result_file << "SVM Classifier" << std::endl;
+				auto svm = cv::ml::SVM::create();
+				svm->setKernel(cv::ml::SVM::LINEAR);
+				svm->train(X_train, cv::ml::ROW_SAMPLE, y_train);
+				classifiers.push_back(svm);
+
+				result_file << "Random Forest Classifier" << std::endl;
+				auto rf = cv::ml::RTrees::create();
+				rf->train(X_train, cv::ml::ROW_SAMPLE, y_train);
+				classifiers.push_back(rf);
+
+				result_file << "KNN Classifier" << std::endl;
+				auto knn = cv::ml::KNearest::create();
+				knn->train(X_train, cv::ml::ROW_SAMPLE, y_train);
+				classifiers.push_back(knn);
 
 				result_file << "Testing phase" << std::endl;
+				std::vector<int> predictedClasses;
 				for (const auto& plateFolder : std::filesystem::directory_iterator(baseTestPath)) {
 					if (std::filesystem::is_directory(plateFolder)) {
 						std::string plateName = plateFolder.path().filename().string(); // Get folder name (e.g., "007PLATECOM")
@@ -3164,11 +3207,15 @@ int main()
 										if (label != -1) {
 											testImages.push_back(featureMat);
 											testLabels.push_back(label); // Use the correct label
+											int predictedClass = classifyBayes(featureMat, priors, likelihood);
+											predictedClasses.push_back(predictedClass);
 										}
 
 										charIndex++; // Move to the next character in the plate name
 									}
 								}
+								// Move here Bayes, SVM, RF, KNN, Weighted Voting and push them in candidateResults
+								
 							}
 						}
 					}
@@ -3176,43 +3223,19 @@ int main()
 
 				cv::Mat X_test, y_test;
 				cv::vconcat(testImages, X_test);
-				cv::Mat(testLabels).convertTo(y_test, CV_32S);
-				cv::Mat priors(C, 1, CV_64FC1);
-				cv::Mat likelihood(C, d, CV_64FC1, cv::Scalar(1.0));
-
-				result_file << "Bayes Classifier" << std::endl;
-				for (int c = 0; c < C; ++c) {
-					Mat classSamples = X_train.rowRange(trainIndex * c / C, trainIndex * (c + 1) / C);
-					int classCount = classSamples.rows;
-					classSamples.convertTo(classSamples, CV_64F);
-					priors.at<double>(c, 0) = static_cast<double>(classCount) / X_train.rows;
-					for (int j = 0; j < 4320; ++j) {
-						double count = 0.0;
-						for (int k = 0; k < classSamples.rows; ++k) {
-							if (classSamples.at<double>(k, j) != 0) {
-								count++;
-							}
-						}
-						if (count == 0) {
-							likelihood.at<double>(c, j) = (count + 1) / (classCount + C);
-						}
-						else {
-							likelihood.at<double>(c, j) = count / classCount;
-						}
-					}
-				}
+				cv::Mat(testLabels).convertTo(y_test, CV_32S);				
 
 				int correct = 0, total = 0;
 				Mat confusionMatrix = Mat::zeros(C, C, CV_32S);
 
-				std::vector<int> predictedClasses;
+				/*std::vector<int> predictedClasses;
 
 				for (int i = 0; i < X_test.rows; ++i) {
 					Mat img = X_test.row(i).reshape(1, 4320);
 					int predictedClass = classifyBayes(img, priors, likelihood);
 					predictedClasses.push_back(predictedClass);
-				}
-				std::vector<std::shared_ptr<cv::ml::StatModel>> classifiers;
+				}*/
+				/*std::vector<std::shared_ptr<cv::ml::StatModel>> classifiers;
 
 				result_file << "SVM Classifier" << std::endl;
 				auto svm = cv::ml::SVM::create();
@@ -3228,7 +3251,7 @@ int main()
 				result_file << "KNN Classifier" << std::endl;
 				auto knn = cv::ml::KNearest::create();
 				knn->train(X_train, cv::ml::ROW_SAMPLE, y_train);
-				classifiers.push_back(knn);
+				classifiers.push_back(knn);*/
 
 				std::vector<cv::Mat> testSamplesVec;
 				for (int i = 0; i < X_test.rows; ++i) {
