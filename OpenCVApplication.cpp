@@ -1710,16 +1710,17 @@ int classifyBayes(Mat img, Mat priors, Mat likelihood) {
 		for (int c = 0; c < priors.rows; c++) {
 			double logPosterior = log(priors.at<double>(c, 0));
 			for (int j = 0; j < flat.cols; j++) {
+				//log_file << "Likelihood at (" << c << ", " << j << ") = " << likelihood.at<double>(c, j) << std::endl;
 				if (flat.at<double>(0, j) == 0) {
 					logPosterior += log(1.0 - likelihood.at<double>(c, j) + epsilon);
 				}
 				else {
 					logPosterior += log(likelihood.at<double>(c, j) + epsilon);
-					log_file << "Flat = " << flat.at<double>(0, j) << " for j = " << j << std::endl;
+					//log_file << "Flat = " << flat.at<double>(0, j) << " for j = " << j << std::endl;
 				}
 			}
 			logPosteriors[c] = logPosterior;
-			log_file << "Log Posterior = " << logPosterior << std::endl;
+			//log_file << "Log Posterior = " << logPosterior << std::endl;
 			if (maxLogPosterior < logPosterior) {
 				bestClass = c;
 				maxLogPosterior = logPosterior;
@@ -2166,6 +2167,7 @@ struct TestImageInfo {
 	int testIndex;
 	std::string plateName;
 	int candidateIndex;
+	std::string imageName;
 };
 
 int main()
@@ -3095,6 +3097,7 @@ int main()
 				std::vector<Mat> trainImages, testImages;
 				std::vector<int> trainLabels, testLabels;
 				int trainIndex = 0, testIndex = 0;
+				std::map<int, std::pair<int, int>> classIndexes;
 
 				result_file << "Training phase" << std::endl;
 				for (int c = 0; c < C; ++c) {
@@ -3106,7 +3109,7 @@ int main()
 					std::string prefix = (c < 10)
 						? std::to_string(c)
 						: std::string(1, char('A' + (c - 10)));
-
+					int classStartIndex = trainIndex;
 					for (int index = 1; ; ++index) {
 						char fname[256];
 						sprintf(fname, "%s/%s_%d.png", folderPath.c_str(), prefix.c_str(), index);
@@ -3125,7 +3128,10 @@ int main()
 
 						trainImages.push_back(featureMat);
 						trainLabels.push_back(c);
+						trainIndex++;
 					}
+					int classEndIndex = trainIndex - 1;
+					classIndexes[c] = { classStartIndex, classEndIndex };
 				}
 
 				cv::Mat X_train, y_train;
@@ -3146,10 +3152,25 @@ int main()
 						}
 						//result_file << "Plate: " << plateName << std::endl;
 						// Process each candidate folder inside the plate folder
-						int candidateIndex = 0;
 						for (const auto& candidateFolder : std::filesystem::directory_iterator(plateFolder.path())) {
 							if (std::filesystem::is_directory(candidateFolder)) {
-								result_file << candidateFolder << std::endl;
+								//result_file << candidateFolder << std::endl;
+								std::string folderName = candidateFolder.path().filename().string();
+								int candidateIndex = -1; // Default to -1 for safety
+								if (folderName.rfind("candidate", 0) == 0) { // Check if folder name starts with "candidate"
+									try {
+										candidateIndex = std::stoi(folderName.substr(9)); // Extract the numeric part
+									}
+									catch (const std::invalid_argument& e) {
+										std::cerr << "Invalid folder name: " << folderName << std::endl;
+										continue;
+									}
+									catch (const std::out_of_range& e) {
+										std::cerr << "Out-of-range number in folder name: " << folderName << std::endl;
+										continue;
+									}
+								}
+
 								int charIndex = 0; // For keeping track of which character we're dealing with
 								// Iterate through the images in the candidate folder
 								for (const auto& imgFile : std::filesystem::directory_iterator(candidateFolder.path())) {
@@ -3185,17 +3206,16 @@ int main()
 										else if (character >= 'A' && character <= 'Z') {
 											label = character - 'A' + 10; // Label letters A-Z as 10-35
 										}
-
+										std::string imageName = imgFile.path().stem().string();
 										// Ensure the label is valid
 										if (label != -1) {
 											testImages.push_back(featureMat);
-											testLabels.push_back(label); 
-											TestImageInfo info = { testIndex, plateName, candidateIndex };
+											testLabels.push_back(label);
+											TestImageInfo info = { testIndex, plateName, candidateIndex, imageName };
 											testImageInfoVec.push_back(info);
 										}
 										charIndex++;
 										testIndex++;
-										candidateIndex++;
 									}
 								}
 							}
@@ -3210,11 +3230,16 @@ int main()
 				cv::Mat likelihood(C, d, CV_64FC1, cv::Scalar(1.0));
 
 				result_file << "Bayes Classifier" << std::endl;
+				result_file << "Train Index = " << trainIndex << std::endl;
 				for (int c = 0; c < C; ++c) {
-					Mat classSamples = X_train.rowRange(trainIndex * c / C, trainIndex * (c + 1) / C);
+					int classStartIndex = classIndexes[c].first;
+					int classEndIndex = classIndexes[c].second;
+					Mat classSamples = X_train.rowRange(classStartIndex, classEndIndex + 1);
 					int classCount = classSamples.rows;
 					classSamples.convertTo(classSamples, CV_64F);
 					priors.at<double>(c, 0) = static_cast<double>(classCount) / X_train.rows;
+					result_file << "Prior for " << c << " = " << priors.at<double>(c, 0) << std::endl;
+					result_file << "Class Count = " << classCount << std::endl;
 					for (int j = 0; j < 4320; ++j) {
 						double count = 0.0;
 						for (int k = 0; k < classSamples.rows; ++k) {
@@ -3227,6 +3252,7 @@ int main()
 						}
 						else {
 							likelihood.at<double>(c, j) = count / classCount;
+							//result_file << "Count = " << count << std::endl;
 						}
 					}
 				}
@@ -3287,19 +3313,29 @@ int main()
 					classifiers, customClassifiers, classifierWeights, customClassifierWeights, testSamplesVec);
 
 				// use TestImageInfo to go to each row in X_test and to print the corresponding plateName and the predictions
+				result_file << "Test Image Info Size = " << testImageInfoVec.size() << std::endl;
+				result_file << "Predictions Size = " << predictions.size() << std::endl;
 				result_file << "Predictions" << std::endl;
+				std::unordered_map<int, std::string> candidatePredictions;
 				for (int i = 0; i < predictions.size(); ++i) {
 					const TestImageInfo& testInfo = testImageInfoVec[i];
+					char predictedChar;
 					if (predictions[i] <= 9) {
-						result_file << ", Plate Name: " << testInfo.plateName
-							<< ", Predicted Class: " << predictions[i] << std::endl;
+						predictedChar = '0' + predictions[i]; // Convert digit to character
 					}
 					else {
-						char predictedChar = 'A' + (predictions[i] - 10);
-						result_file << ", Plate Name: " << testInfo.plateName<< ", Predicted Class: " << predictedChar << " by Candidate " << testInfo.candidateIndex <<std::endl;
+						predictedChar = 'A' + (predictions[i] - 10); // Convert class index to character
 					}
+					candidatePredictions[testInfo.candidateIndex] += predictedChar;
+					result_file << "Plate Name: " << testInfo.plateName
+						<< ", Predicted Class: " << predictedChar
+						<< " by Candidate " << testInfo.candidateIndex
+						<< " at Image " << testInfo.imageName << std::endl;
 				}
 
+				for (const auto& [candidateIndex, mergedString] : candidatePredictions) {
+					result_file << "Merged string for Candidate " << candidateIndex << ": " << mergedString << std::endl;
+				}
 
 				for (size_t i = 0; i < testLabels.size(); ++i) {
 					if (predictions[i] == testLabels[i]) {
