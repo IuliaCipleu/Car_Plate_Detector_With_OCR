@@ -1709,6 +1709,7 @@ int classifyBayes(Mat img, Mat priors, Mat likelihood) {
 		double epsilon = 1e-10;
 		for (int c = 0; c < priors.rows; c++) {
 			double logPosterior = log(priors.at<double>(c, 0));
+			log_file << "Initial Log Posterior for class " << c << " = " << logPosterior << " for prior = " << priors.at<double>(c, 0) << std::endl;
 			for (int j = 0; j < flat.cols; j++) {
 				//log_file << "Likelihood at (" << c << ", " << j << ") = " << likelihood.at<double>(c, j) << std::endl;
 				if (flat.at<double>(0, j) == 0) {
@@ -2169,6 +2170,85 @@ struct TestImageInfo {
 	int candidateIndex;
 	std::string imageName;
 };
+
+int levenshteinDistance(const std::string& s1, const std::string& s2) {
+	int m = s1.size();
+	int n = s2.size();
+	std::vector<std::vector<int>> dp(m + 1, std::vector<int>(n + 1, 0));
+
+	for (int i = 0; i <= m; ++i) dp[i][0] = i;
+	for (int j = 0; j <= n; ++j) dp[0][j] = j;
+
+	for (int i = 1; i <= m; ++i) {
+		for (int j = 1; j <= n; ++j) {
+			if (s1[i - 1] == s2[j - 1]) {
+				dp[i][j] = dp[i - 1][j - 1];
+			}
+			else {
+				dp[i][j] = 1 + min( min(dp[i - 1][j], dp[i][j - 1]), dp[i - 1][j - 1] );
+			}
+		}
+	}
+	return dp[m][n];
+}
+
+int countCommonCharacters(const std::string& s1, const std::string& s2) {
+	std::string s1Copy = s1, s2Copy = s2;
+	std::sort(s1Copy.begin(), s1Copy.end());
+	std::sort(s2Copy.begin(), s2Copy.end());
+
+	int count = 0;
+	auto it1 = s1Copy.begin();
+	auto it2 = s2Copy.begin();
+
+	while (it1 != s1Copy.end() && it2 != s2Copy.end()) {
+		if (*it1 == *it2) {
+			++count;
+			++it1;
+			++it2;
+		}
+		else if (*it1 < *it2) {
+			++it1;
+		}
+		else {
+			++it2;
+		}
+	}
+	return count;
+}
+
+void analyzePredictions(const std::unordered_map<std::string, std::unordered_map<int, std::string>>& platePredictions,
+	std::ostream& result_file) {
+	int totalLevenshtein = 0;
+	int totalCommonChars = 0;
+	int totalLengthDiff = 0;
+	int totalCandidates = 0;
+
+	for (const auto& [plateName, candidates] : platePredictions) {
+		result_file << "Analysis for Plate: " << plateName << std::endl;
+
+		for (const auto& [candidateIndex, mergedString] : candidates) {
+			int levenshtein = levenshteinDistance(plateName, mergedString);
+			int commonChars = countCommonCharacters(plateName, mergedString);
+			int lengthDiff = std::abs((int)plateName.size() - (int)mergedString.size());
+
+			result_file << "  Candidate " << candidateIndex << ": " << mergedString << std::endl;
+			result_file << "    Levenshtein Distance: " << levenshtein << std::endl;
+			result_file << "    Common Characters: " << commonChars << std::endl;
+			result_file << "    Length Difference: " << lengthDiff << std::endl;
+
+			totalLevenshtein += levenshtein;
+			totalCommonChars += commonChars;
+			totalLengthDiff += lengthDiff;
+			++totalCandidates;
+		}
+	}
+
+	result_file << "Overall Analysis:" << std::endl;
+	result_file << "  Average Levenshtein Distance: " << (totalCandidates > 0 ? totalLevenshtein / totalCandidates : 0) << std::endl;
+	result_file << "  Total Common Characters: " << totalCommonChars << std::endl;
+	result_file << "  Average Length Difference: " << (totalCandidates > 0 ? totalLengthDiff / totalCandidates : 0) << std::endl;
+}
 
 int main()
 {
@@ -3230,7 +3310,8 @@ int main()
 				cv::Mat likelihood(C, d, CV_64FC1, cv::Scalar(1.0));
 
 				result_file << "Bayes Classifier" << std::endl;
-				result_file << "Train Index = " << trainIndex << std::endl;
+				//result_file << "Train Index = " << trainIndex << std::endl;
+				int countZero = 0, countNonZero = 0;
 				for (int c = 0; c < C; ++c) {
 					int classStartIndex = classIndexes[c].first;
 					int classEndIndex = classIndexes[c].second;
@@ -3238,35 +3319,39 @@ int main()
 					int classCount = classSamples.rows;
 					classSamples.convertTo(classSamples, CV_64F);
 					priors.at<double>(c, 0) = static_cast<double>(classCount) / X_train.rows;
-					result_file << "Prior for " << c << " = " << priors.at<double>(c, 0) << std::endl;
-					result_file << "Class Count = " << classCount << std::endl;
+					//result_file << "Prior for " << c << " = " << priors.at<double>(c, 0) << std::endl;
+					//result_file << "Class Count = " << classCount << std::endl;
 					for (int j = 0; j < 4320; ++j) {
 						double count = 0.0;
 						for (int k = 0; k < classSamples.rows; ++k) {
-							if (classSamples.at<double>(k, j) != 0) {
+							/*if (classSamples.at<double>(k, j) != 0) {
 								count++;
-							}
+							}*/
+							count += classSamples.at<double>(k, j);
 						}
 						if (count == 0) {
 							likelihood.at<double>(c, j) = (count + 1) / (classCount + C);
+							result_file << "Count = " << count << "; Likelihood = " << likelihood.at<double>(c, j) << std::endl;
+							countZero++;
 						}
 						else {
 							likelihood.at<double>(c, j) = count / classCount;
-							//result_file << "Count = " << count << std::endl;
+							result_file << "Count = " << count << "; Likelihood = " << likelihood.at<double>(c, j) << std::endl;
+							countNonZero++;
 						}
 					}
 				}
-
+				result_file << "Count zero = " << countZero << "; Count non-zero = " << countNonZero << std::endl;
 				int correct = 0, total = 0;
 				Mat confusionMatrix = Mat::zeros(C, C, CV_32S);
 
-				std::vector<int> predictedClasses;
+				/*std::vector<int> predictedClasses;
 
 				for (int i = 0; i < X_test.rows; ++i) {
 					Mat img = X_test.row(i).reshape(1, 4320);
 					int predictedClass = classifyBayes(img, priors, likelihood);
 					predictedClasses.push_back(predictedClass);
-				}
+				}*/
 				std::vector<std::shared_ptr<cv::ml::StatModel>> classifiers;
 
 				result_file << "SVM Classifier" << std::endl;
@@ -3316,7 +3401,9 @@ int main()
 				result_file << "Test Image Info Size = " << testImageInfoVec.size() << std::endl;
 				result_file << "Predictions Size = " << predictions.size() << std::endl;
 				result_file << "Predictions" << std::endl;
-				std::unordered_map<int, std::string> candidatePredictions;
+				std::unordered_map<std::string, std::unordered_map<int, std::string>> platePredictions;
+
+				// Process predictions and organize them by plate
 				for (int i = 0; i < predictions.size(); ++i) {
 					const TestImageInfo& testInfo = testImageInfoVec[i];
 					char predictedChar;
@@ -3326,18 +3413,28 @@ int main()
 					else {
 						predictedChar = 'A' + (predictions[i] - 10); // Convert class index to character
 					}
-					candidatePredictions[testInfo.candidateIndex] += predictedChar;
-					result_file << "Plate Name: " << testInfo.plateName
+
+					// Group predictions by plate and candidate
+					platePredictions[testInfo.plateName][testInfo.candidateIndex] += predictedChar;
+
+					/*result_file << "Plate Name: " << testInfo.plateName
 						<< ", Predicted Class: " << predictedChar
 						<< " by Candidate " << testInfo.candidateIndex
-						<< " at Image " << testInfo.imageName << std::endl;
+						<< " at Image " << testInfo.imageName << std::endl;*/
 				}
 
-				for (const auto& [candidateIndex, mergedString] : candidatePredictions) {
-					result_file << "Merged string for Candidate " << candidateIndex << ": " << mergedString << std::endl;
-				}
+				// Print the merged strings for each candidate under each plate
+				/*for (const auto& [plateName, candidates] : platePredictions) {
+					result_file << "Plate Name: " << plateName << std::endl;
+					for (const auto& [candidateIndex, mergedString] : candidates) {
+						result_file << "  Candidate " << candidateIndex
+							<< ": " << mergedString << std::endl;
+					}
+				}*/
 
-				for (size_t i = 0; i < testLabels.size(); ++i) {
+				analyzePredictions(platePredictions, result_file);
+
+				/*for (size_t i = 0; i < testLabels.size(); ++i) {
 					if (predictions[i] == testLabels[i]) {
 						correct++;
 					}
@@ -3359,7 +3456,7 @@ int main()
 					result_file << "Class " << c << ": Precision = " << precision
 						<< ", Recall = " << recall
 						<< ", F1-Score = " << f1Score << std::endl;
-				}
+				}*/
 
 			}
 			result_file.close();
