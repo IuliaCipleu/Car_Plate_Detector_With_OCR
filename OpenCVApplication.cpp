@@ -1715,9 +1715,11 @@ int classifyBayes(Mat img, Mat priors, Mat likelihood) {
 				}
 				else {
 					logPosterior += log(likelihood.at<double>(c, j) + epsilon);
+					log_file << "Flat = " << flat.at<double>(0, j) << " for j = " << j << std::endl;
 				}
 			}
 			logPosteriors[c] = logPosterior;
+			log_file << "Log Posterior = " << logPosterior << std::endl;
 			if (maxLogPosterior < logPosterior) {
 				bestClass = c;
 				maxLogPosterior = logPosterior;
@@ -2006,6 +2008,15 @@ bool isValidAspectRatio(const Rect& box) {
 	return (aspectRatio >= 2.0 && aspectRatio <= 5.0);
 }
 
+bool isLandscapeRectangle(const Rect& box) {
+	if (box.width > box.height) {
+		return true;
+	}
+	else {
+		return false;
+	}
+}
+
 std::vector<Mat> findLicensePlateCandidates(const Mat& src, const std::vector<Rect>& boundingBoxes) {
 	std::vector<Mat> candidates;
 	int index = 1;
@@ -2031,6 +2042,12 @@ std::vector<Mat> findLicensePlateCandidates(const Mat& src, const std::vector<Re
 			continue; // Reject if aspect ratio is invalid
 		}
 
+		if (roi.rows != src.rows || roi.cols != src.cols) {
+			if (!isLandscapeRectangle(box)) {
+				continue;
+			}
+		}
+
 		// If all checks pass, save the candidate
 		candidates.push_back(roi);
 		//std::cout << "Candidate " << index << " accepted" << std::endl;
@@ -2039,7 +2056,6 @@ std::vector<Mat> findLicensePlateCandidates(const Mat& src, const std::vector<Re
 
 	return candidates;
 }
-
 
 std::vector<int> weightedVotingClassifier(
 	const std::vector<std::shared_ptr<cv::ml::StatModel>>& classifiers,
@@ -2149,6 +2165,7 @@ struct CandidateResult {
 struct TestImageInfo {
 	int testIndex;
 	std::string plateName;
+	int candidateIndex;
 };
 
 int main()
@@ -2317,6 +2334,7 @@ int main()
 					}
 
 					// Compute projections and segment characters for the current candidate
+					//candidates[i] = invertedBW(candidates[i]);
 					Mat projection = computeProjections(candidates[i]);
 					imshow("Projection for Candidate " + std::to_string(i), projection);
 
@@ -3128,6 +3146,7 @@ int main()
 						}
 						//result_file << "Plate: " << plateName << std::endl;
 						// Process each candidate folder inside the plate folder
+						int candidateIndex = 0;
 						for (const auto& candidateFolder : std::filesystem::directory_iterator(plateFolder.path())) {
 							if (std::filesystem::is_directory(candidateFolder)) {
 								result_file << candidateFolder << std::endl;
@@ -3171,12 +3190,12 @@ int main()
 										if (label != -1) {
 											testImages.push_back(featureMat);
 											testLabels.push_back(label); 
-											TestImageInfo info = { testIndex, plateName };
+											TestImageInfo info = { testIndex, plateName, candidateIndex };
 											testImageInfoVec.push_back(info);
-											// ADD CANDIDATE TOO!!!!
 										}
 										charIndex++;
 										testIndex++;
+										candidateIndex++;
 									}
 								}
 							}
@@ -3277,8 +3296,7 @@ int main()
 					}
 					else {
 						char predictedChar = 'A' + (predictions[i] - 10);
-						result_file << ", Plate Name: " << testInfo.plateName
-							<< ", Predicted Class: " << predictedChar << std::endl;
+						result_file << ", Plate Name: " << testInfo.plateName<< ", Predicted Class: " << predictedChar << " by Candidate " << testInfo.candidateIndex <<std::endl;
 					}
 				}
 
