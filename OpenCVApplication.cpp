@@ -1711,7 +1711,7 @@ int classifyBayes(Mat img, Mat priors, Mat likelihood) {
 			double logPosterior = log(priors.at<double>(c, 0));
 			log_file << "Initial Log Posterior for class " << c << " = " << logPosterior << " for prior = " << priors.at<double>(c, 0) << std::endl;
 			for (int j = 0; j < flat.cols; j++) {
-				//log_file << "Likelihood at (" << c << ", " << j << ") = " << likelihood.at<double>(c, j) << std::endl;
+				log_file << "Likelihood at (" << c << ", " << j << ") = " << likelihood.at<double>(c, j) << std::endl;
 				if (flat.at<double>(0, j) == 0) {
 					logPosterior += log(1.0 - likelihood.at<double>(c, j) + epsilon);
 				}
@@ -1721,7 +1721,7 @@ int classifyBayes(Mat img, Mat priors, Mat likelihood) {
 				}
 			}
 			logPosteriors[c] = logPosterior;
-			//log_file << "Log Posterior = " << logPosterior << std::endl;
+			log_file << "Log Posterior = " << logPosterior << std::endl;
 			if (maxLogPosterior < logPosterior) {
 				bestClass = c;
 				maxLogPosterior = logPosterior;
@@ -3318,27 +3318,77 @@ int main()
 					Mat classSamples = X_train.rowRange(classStartIndex, classEndIndex + 1);
 					int classCount = classSamples.rows;
 					classSamples.convertTo(classSamples, CV_64F);
+
+					cv::Mat mean, stddev;
+					cv::meanStdDev(classSamples, mean, stddev);
+
 					priors.at<double>(c, 0) = static_cast<double>(classCount) / X_train.rows;
+
 					//result_file << "Prior for " << c << " = " << priors.at<double>(c, 0) << std::endl;
 					//result_file << "Class Count = " << classCount << std::endl;
 					for (int j = 0; j < 4320; ++j) {
-						double count = 0.0;
-						for (int k = 0; k < classSamples.rows; ++k) {
-							/*if (classSamples.at<double>(k, j) != 0) {
-								count++;
-							}*/
-							count += classSamples.at<double>(k, j);
+						//double count = 0.0;
+						//for (int k = 0; k < classSamples.rows; ++k) {
+						//	/*if (classSamples.at<double>(k, j) != 0) {
+						//		count++;
+						//	}*/
+						//	count += classSamples.at<double>(k, j);
+						//}
+						//if (count == 0) {
+						//	likelihood.at<double>(c, j) = (count + 1) / (classCount + C);
+						//	result_file << "Count = " << count << "; Likelihood = " << likelihood.at<double>(c, j) << std::endl;
+						//	countZero++;
+						//}
+						//else {
+						//	likelihood.at<double>(c, j) = count / classCount;
+						//	result_file << "Count = " << count << "; Likelihood = " << likelihood.at<double>(c, j) << std::endl;
+						//	countNonZero++;
+						//}
+						double feature_value = classSamples.at<double>(0, j); // Example for the first sample
+						double mean_value = mean.at<double>(j);
+						double stddev_value = stddev.at<double>(j);
+
+						// Handle zero or small stddev values
+						if (stddev_value < 1e-6) {
+							stddev_value = 1e-6;  // Prevent division by zero
 						}
-						if (count == 0) {
-							likelihood.at<double>(c, j) = (count + 1) / (classCount + C);
-							result_file << "Count = " << count << "; Likelihood = " << likelihood.at<double>(c, j) << std::endl;
-							countZero++;
+						else if (stddev_value > 1e6) {
+							stddev_value = 1e6;  // Prevent overflow with very large values
 						}
-						else {
-							likelihood.at<double>(c, j) = count / classCount;
-							result_file << "Count = " << count << "; Likelihood = " << likelihood.at<double>(c, j) << std::endl;
-							countNonZero++;
+
+						// Check for NaN values in mean or stddev
+						if (std::isnan(mean_value) || std::isnan(stddev_value)) {
+							likelihood.at<double>(c, j) = 0.0;  // Or handle it differently
+							continue;
 						}
+
+						// Calculate exponent
+						double exponent = -0.5 * pow(feature_value - mean_value, 2) /
+							(stddev_value * stddev_value);
+
+						// Cap exponent to avoid overflow/underflow
+						if (exponent < -700) {
+							exponent = -700;
+						}
+						else if (exponent > 700) {
+							exponent = 700;
+						}
+
+						double likelihood_value = (1.0 / sqrt(2 * CV_PI * stddev_value * stddev_value)) *
+							exp(exponent);
+
+						// Handle NaN likelihood values
+						if (std::isnan(likelihood_value)) {
+							result_file << "NaN encountered for class " << c << ", feature " << j << std::endl;
+							result_file << "Feature value: " << feature_value << ", Mean: " << mean.at<double>(j)
+								<< ", Stddev: " << stddev.at<double>(j) << std::endl;
+							likelihood_value = 1e-10;  // Default to a small value
+						}
+
+						// Log the likelihood for each feature
+						result_file << "Likelihood for class " << c << ", feature " << j << " = " << likelihood_value << std::endl;
+
+						likelihood.at<double>(c, j) = likelihood_value;
 					}
 				}
 				result_file << "Count zero = " << countZero << "; Count non-zero = " << countNonZero << std::endl;
