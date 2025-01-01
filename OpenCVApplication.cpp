@@ -1711,7 +1711,7 @@ int classifyBayes(Mat img, Mat priors, Mat likelihood) {
 			double logPosterior = log(priors.at<double>(c, 0));
 			log_file << "Initial Log Posterior for class " << c << " = " << logPosterior << " for prior = " << priors.at<double>(c, 0) << std::endl;
 			for (int j = 0; j < flat.cols; j++) {
-				log_file << "Likelihood at (" << c << ", " << j << ") = " << likelihood.at<double>(c, j) << std::endl;
+				//log_file << "Likelihood at (" << c << ", " << j << ") = " << likelihood.at<double>(c, j) << std::endl;
 				if (flat.at<double>(0, j) == 0) {
 					logPosterior += log(1.0 - likelihood.at<double>(c, j) + epsilon);
 				}
@@ -3004,6 +3004,7 @@ int main()
 				std::vector<Mat> trainImages, testImages;
 				std::vector<int> trainLabels, testLabels;
 				int trainIndex = 0, testIndex = 0;
+				std::map<int, std::pair<int, int>> classIndexes;
 
 				srand(static_cast<unsigned int>(time(0)));
 
@@ -3019,7 +3020,7 @@ int main()
 						folderName = "letter_" + std::string(1, char('A' + (c - 10)));
 						prefix = std::string(1, char('A' + (c - 10)));
 					}
-
+					int classStartIndex = trainIndex;
 					std::string folderPath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/characters/" + folderName;
 					std::vector<std::string> filenames;
 					for (int index = 1; ; ++index) {
@@ -3053,6 +3054,8 @@ int main()
 							testIndex++;
 						}
 					}
+					int classEndIndex = trainIndex - 1;
+					classIndexes[c] = { classStartIndex, classEndIndex };
 				}
 
 				cv::Mat X_train, y_train, X_test, y_test;
@@ -3064,8 +3067,11 @@ int main()
 				cv::Mat likelihood(C, d, CV_64FC1, cv::Scalar(1.0));
 
 				for (int c = 0; c < C; ++c) {
-					Mat classSamples = X_train.rowRange(trainIndex * c / C, trainIndex * (c + 1) / C);
+					int classStartIndex = classIndexes[c].first;
+					int classEndIndex = classIndexes[c].second;
+					Mat classSamples = X_train.rowRange(classStartIndex, classEndIndex + 1);
 					int classCount = classSamples.rows;
+					result_file << "Class " << c << " count = " << classCount << std::endl;
 					classSamples.convertTo(classSamples, CV_64F);
 					priors.at<double>(c, 0) = static_cast<double>(classCount) / X_train.rows;
 					for (int j = 0; j < 4320; ++j) {
