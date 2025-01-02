@@ -364,6 +364,36 @@ Mat erosionCross(const Mat& src) {
 	return dst;
 }
 
+Mat erosionVertical(const Mat& src) {
+	Mat dst = src.clone();
+	int dj[8] = { 1, 1, 0, -1, -1, -1, 0, 1 };
+	int di[8] = { 0, -1, -1, -1, 0, 1, 1, 1 };
+	int h = src.rows;
+	int w = src.cols;
+	Mat object(3, 3, CV_8UC1, Scalar(255));
+	object.at < uchar>(0, 1) = 0;
+	object.at < uchar>(1, 1) = 0;
+	object.at < uchar>(2, 1) = 0;
+	for (int i = 0; i < h; i++) {
+		for (int j = 0; j < w; j++) {
+			if (src.at<uchar>(i, j) == 0) {
+				for (int k = 0; k < 3; k++) {
+					for (int l = 0; l < 3; l++) {
+						int x = i + k - (object.rows / 2);
+						int y = j + l - (object.cols / 2);
+						if (x >= 0 && x < h && y >= 0 && y < w) {
+							if (object.at<uchar>(k, l) == 0 && src.at<uchar>(x, y) == 255) {
+								if (x >= 0 && x < h && y >= 0 && y < w) dst.at<uchar>(i, j) = 255;
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	return dst;
+}
+
 Mat erosionCrossGrayscale(const Mat& src) {
 	Mat dst = src.clone();
 	int dj[8] = { 1, 1, 0, -1, -1, -1, 0, 1 };
@@ -429,6 +459,12 @@ Mat repeatOpening(const Mat& src, int n) {
 Mat closing(const Mat& src) {
 	Mat dilationM = dilationCross(src);
 	Mat dst = erosionCross(dilationM);
+	return dst;
+}
+
+Mat closingVertical(const Mat& src) {
+	Mat dilationM = dilationVertical(src);
+	Mat dst = erosionVertical(dilationM);
 	return dst;
 }
 
@@ -1347,7 +1383,8 @@ Mat basicGlobalThresholding(const Mat& src) {
 		for (int i = T; i <= mx; i++) {
 			sum2 = sum2 + i * hist[i];
 		}
-		int g2 = sum2 / N2;
+		int g2 = 0;
+		if (N2!= 0) g2 = sum2 / N2;
 		Tnew = (double)(g1 + g2) / 2;
 	} while (abs(T - Tnew) > 0.1);
 	for (int i = 0; i < dst.rows; i++) {
@@ -2224,8 +2261,17 @@ void analyzePredictions(const std::unordered_map<std::string, std::unordered_map
 	int totalLengthDiff = 0;
 	int totalCandidates = 0;
 
+	int bestTotalLevenshtein = 0;
+	int bestTotalCommonChars = 0;
+	int bestTotalLengthDiff = 0;
+	int totalPlates = 0;
+
 	for (const auto& [plateName, candidates] : platePredictions) {
 		result_file << "Analysis for Plate: " << plateName << std::endl;
+
+		int bestLevenshtein = INT_MAX;
+		int bestCommonChars = 0;
+		int bestLengthDiff = INT_MAX;
 
 		for (const auto& [candidateIndex, mergedString] : candidates) {
 			int levenshtein = levenshteinDistance(plateName, mergedString);
@@ -2241,14 +2287,35 @@ void analyzePredictions(const std::unordered_map<std::string, std::unordered_map
 			totalCommonChars += commonChars;
 			totalLengthDiff += lengthDiff;
 			++totalCandidates;
+
+			// Track the best candidate for the current plate
+			if (levenshtein < bestLevenshtein) {
+				bestLevenshtein = levenshtein;
+				bestCommonChars = commonChars;
+				bestLengthDiff = lengthDiff;
+			}
 		}
+
+		// Update overall best analysis metrics
+		bestTotalLevenshtein += bestLevenshtein;
+		bestTotalCommonChars += bestCommonChars;
+		bestTotalLengthDiff += bestLengthDiff;
+		++totalPlates;
 	}
 
-	result_file << "Overall Analysis:" << std::endl;
+	// Overall analysis for all candidates
+	result_file << "Overall Analysis (All Candidates):" << std::endl;
 	result_file << "  Average Levenshtein Distance: " << (totalCandidates > 0 ? totalLevenshtein / totalCandidates : 0) << std::endl;
 	result_file << "  Total Common Characters: " << totalCommonChars << std::endl;
 	result_file << "  Average Length Difference: " << (totalCandidates > 0 ? totalLengthDiff / totalCandidates : 0) << std::endl;
+
+	// Overall analysis for best candidates only
+	result_file << "Overall Analysis (Best Candidates):" << std::endl;
+	result_file << "  Average Levenshtein Distance: " << (totalPlates > 0 ? bestTotalLevenshtein / totalPlates : 0) << std::endl;
+	result_file << "  Total Common Characters: " << bestTotalCommonChars << std::endl;
+	result_file << "  Average Length Difference: " << (totalPlates > 0 ? bestTotalLengthDiff / totalPlates : 0) << std::endl;
 }
+
 
 int main()
 {
@@ -3178,6 +3245,7 @@ int main()
 
 				const std::string baseTrainPath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/characters/";
 				const std::string baseTestPath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/charactersResulted/";
+				//const std::string baseTestPath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/datasetOne/";
 				const int C = 36; // 0-9 digits + 26 letters
 				const int d = 128 * 64; // feature dimensions
 				std::vector<Mat> trainImages, testImages;
@@ -3267,11 +3335,16 @@ int main()
 										// Ensure charIndex is within bounds of plateName length
 										if (charIndex >= plateName.size()) {
 											break; // Exit if charIndex exceeds plateName length
-										}
-
+										}										
+										//imshow("Initial", img);
+										//img = repeatOpening(img, 1);
+										//imshow("After Opening", img);
+										//img = closingVertical(img);
+										//imshow("After Closing", img);
 										cv::resize(img, img, cv::Size(128, 64)); // Resize the image to match input size
+										//imshow("Resized", img);
 										img = basicGlobalThresholding(img); // Apply thresholding to binarize the image
-
+										//imshow("Binarized", img);										
 										std::vector<double> hogFeatures;
 										//show = true;
 										computeHOG(img, 8, 2, 9, hogFeatures); // Extract HOG features
@@ -3330,27 +3403,8 @@ int main()
 
 					priors.at<double>(c, 0) = static_cast<double>(classCount) / X_train.rows;
 
-					//result_file << "Prior for " << c << " = " << priors.at<double>(c, 0) << std::endl;
-					//result_file << "Class Count = " << classCount << std::endl;
 					for (int j = 0; j < 4320; ++j) {
-						//double count = 0.0;
-						//for (int k = 0; k < classSamples.rows; ++k) {
-						//	/*if (classSamples.at<double>(k, j) != 0) {
-						//		count++;
-						//	}*/
-						//	count += classSamples.at<double>(k, j);
-						//}
-						//if (count == 0) {
-						//	likelihood.at<double>(c, j) = (count + 1) / (classCount + C);
-						//	result_file << "Count = " << count << "; Likelihood = " << likelihood.at<double>(c, j) << std::endl;
-						//	countZero++;
-						//}
-						//else {
-						//	likelihood.at<double>(c, j) = count / classCount;
-						//	result_file << "Count = " << count << "; Likelihood = " << likelihood.at<double>(c, j) << std::endl;
-						//	countNonZero++;
-						//}
-						double feature_value = classSamples.at<double>(0, j); // Example for the first sample
+						double feature_value = classSamples.at<double>(0, j); 
 						double mean_value = mean.at<double>(j);
 						double stddev_value = stddev.at<double>(j);
 
@@ -3391,23 +3445,13 @@ int main()
 							likelihood_value = 1e-10;  // Default to a small value
 						}
 
-						// Log the likelihood for each feature
-						result_file << "Likelihood for class " << c << ", feature " << j << " = " << likelihood_value << std::endl;
-
 						likelihood.at<double>(c, j) = likelihood_value;
 					}
 				}
-				result_file << "Count zero = " << countZero << "; Count non-zero = " << countNonZero << std::endl;
+				//result_file << "Count zero = " << countZero << "; Count non-zero = " << countNonZero << std::endl;
 				int correct = 0, total = 0;
 				Mat confusionMatrix = Mat::zeros(C, C, CV_32S);
 
-				/*std::vector<int> predictedClasses;
-
-				for (int i = 0; i < X_test.rows; ++i) {
-					Mat img = X_test.row(i).reshape(1, 4320);
-					int predictedClass = classifyBayes(img, priors, likelihood);
-					predictedClasses.push_back(predictedClass);
-				}*/
 				std::vector<std::shared_ptr<cv::ml::StatModel>> classifiers;
 
 				result_file << "SVM Classifier" << std::endl;
@@ -3472,47 +3516,9 @@ int main()
 
 					// Group predictions by plate and candidate
 					platePredictions[testInfo.plateName][testInfo.candidateIndex] += predictedChar;
-
-					/*result_file << "Plate Name: " << testInfo.plateName
-						<< ", Predicted Class: " << predictedChar
-						<< " by Candidate " << testInfo.candidateIndex
-						<< " at Image " << testInfo.imageName << std::endl;*/
 				}
-
-				// Print the merged strings for each candidate under each plate
-				/*for (const auto& [plateName, candidates] : platePredictions) {
-					result_file << "Plate Name: " << plateName << std::endl;
-					for (const auto& [candidateIndex, mergedString] : candidates) {
-						result_file << "  Candidate " << candidateIndex
-							<< ": " << mergedString << std::endl;
-					}
-				}*/
 
 				analyzePredictions(platePredictions, result_file);
-
-				/*for (size_t i = 0; i < testLabels.size(); ++i) {
-					if (predictions[i] == testLabels[i]) {
-						correct++;
-					}
-					confusionMatrix.at<int>(predictions[i], testLabels[i])++;
-					total++;
-				}
-				double accuracy = static_cast<double>(correct) / total;
-				result_file << "Accuracy: " << accuracy << std::endl;
-				for (int c = 0; c < C; ++c) {
-					int TP = confusionMatrix.at<int>(c, c);
-					int FN = cv::sum(confusionMatrix.row(c))[0] - TP;
-					int FP = cv::sum(confusionMatrix.col(c))[0] - TP;
-					int TN = cv::sum(confusionMatrix)[0] - (TP + FP + FN);
-
-					double precision = TP / static_cast<double>(TP + FP);
-					double recall = TP / static_cast<double>(TP + FN);
-					double f1Score = 2 * (precision * recall) / (precision + recall);
-
-					result_file << "Class " << c << ": Precision = " << precision
-						<< ", Recall = " << recall
-						<< ", F1-Score = " << f1Score << std::endl;
-				}*/
 
 			}
 			result_file.close();
