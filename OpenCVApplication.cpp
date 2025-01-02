@@ -3279,6 +3279,7 @@ int main()
 						cv::Mat featureMat(hogFeatures);
 						featureMat = featureMat.reshape(1, 1);
 						featureMat.convertTo(featureMat, CV_32F);
+						result_file<< "Computed HOG Features size: " << hogFeatures.size() << std::endl;
 
 						trainImages.push_back(featureMat);
 						trainLabels.push_back(c);
@@ -3404,7 +3405,24 @@ int main()
 					priors.at<double>(c, 0) = static_cast<double>(classCount) / X_train.rows;
 
 					for (int j = 0; j < 4320; ++j) {
-						double feature_value = classSamples.at<double>(0, j); 
+						//double count = 0.0;
+						//for (int k = 0; k < classSamples.rows; ++k) {
+						//	/*if (classSamples.at<double>(k, j) != 0) {
+						//		count++;
+						//	}*/
+						//	count += classSamples.at<double>(k, j);
+						//}
+						//if (count == 0) {
+						//	likelihood.at<double>(c, j) = (count + 1) / (classCount + C);
+						//	result_file << "Count = " << count << "; Likelihood = " << likelihood.at<double>(c, j) << std::endl;
+						//	countZero++;
+						//}
+						//else {
+						//	likelihood.at<double>(c, j) = count / classCount;
+						//	result_file << "Count = " << count << "; Likelihood = " << likelihood.at<double>(c, j) << std::endl;
+						//	countNonZero++;
+						//}
+						double feature_value = classSamples.at<double>(0, j); // Example for the first sample
 						double mean_value = mean.at<double>(j);
 						double stddev_value = stddev.at<double>(j);
 
@@ -3445,6 +3463,8 @@ int main()
 							likelihood_value = 1e-10;  // Default to a small value
 						}
 
+						// Log the likelihood for each feature
+						result_file << "Likelihood for class " << c << ", feature " << j << " = " << likelihood_value << std::endl;
 						likelihood.at<double>(c, j) = likelihood_value;
 					}
 				}
