@@ -1395,7 +1395,7 @@ Mat basicGlobalThresholding(const Mat& src) {
 			sum2 = sum2 + i * hist[i];
 		}
 		int g2 = 0;
-		if (N2!= 0) g2 = sum2 / N2;
+		if (N2 != 0) g2 = sum2 / N2;
 		Tnew = (double)(g1 + g2) / 2;
 	} while (abs(T - Tnew) > 0.1);
 	for (int i = 0; i < dst.rows; i++) {
@@ -2233,7 +2233,7 @@ int levenshteinDistance(const std::string& s1, const std::string& s2) {
 				dp[i][j] = dp[i - 1][j - 1];
 			}
 			else {
-				dp[i][j] = 1 + min( min(dp[i - 1][j], dp[i][j - 1]), dp[i - 1][j - 1] );
+				dp[i][j] = 1 + min(min(dp[i - 1][j], dp[i][j - 1]), dp[i - 1][j - 1]);
 			}
 		}
 	}
@@ -2265,6 +2265,104 @@ int countCommonCharacters(const std::string& s1, const std::string& s2) {
 	return count;
 }
 
+void updateConfusionMatrix(const std::string& actual, const std::string& predicted,
+	std::unordered_map<char, std::unordered_map<char, int>>& confusionMatrix) {
+	int actualLen = actual.size();
+	int predictedLen = predicted.size();
+	int maxLen = max(actualLen, predictedLen);
+
+	for (int i = 0; i < maxLen; ++i) {
+		char actualChar = i < actualLen ? actual[i] : '-'; // Use '-' for extra characters in `predicted`
+		char predictedChar = i < predictedLen ? predicted[i] : '-'; // Use '-' for extra characters in `actual`
+
+		confusionMatrix[actualChar][predictedChar]++;
+	}
+}
+
+void printConfusionMatrix(const std::unordered_map<char, std::unordered_map<char, int>>& confusionMatrix,
+	std::ostream& result_file) {
+	// Collect all unique characters (actual and predicted)
+	std::set<char> uniqueChars;
+	for (const auto& [actualChar, predictions] : confusionMatrix) {
+		uniqueChars.insert(actualChar);
+		for (const auto& [predictedChar, _] : predictions) {
+			uniqueChars.insert(predictedChar);
+		}
+	}
+
+	// Calculate the maximum width for alignment
+	int maxWidth = 1; // Minimum width for single characters
+	for (char c : uniqueChars) {
+		maxWidth = max(maxWidth, (int)std::to_string(c).length());
+	}
+	for (const auto& [actualChar, predictions] : confusionMatrix) {
+		for (const auto& [predictedChar, count] : predictions) {
+			maxWidth = max(maxWidth, (int)std::to_string(count).length());
+		}
+	}
+
+	// Adjust width for a clean table
+	auto pad = [&](const std::string& str) {
+		return std::string(maxWidth - str.length(), ' ') + str;
+		};
+
+	// Print the header row
+	result_file << std::string(maxWidth, ' ') << " ";
+	for (char predictedChar : uniqueChars) {
+		result_file << pad(std::string(1, predictedChar)) << " ";
+	}
+	result_file << std::endl;
+
+	// Print the matrix rows
+	for (char actualChar : uniqueChars) {
+		result_file << pad(std::string(1, actualChar)) << " ";
+		for (char predictedChar : uniqueChars) {
+			int count = confusionMatrix.count(actualChar) && confusionMatrix.at(actualChar).count(predictedChar)
+				? confusionMatrix.at(actualChar).at(predictedChar)
+				: 0;
+			result_file << pad(std::to_string(count)) << " ";
+		}
+		result_file << std::endl;
+	}
+}
+
+void printMetrics(const std::unordered_map<char, std::unordered_map<char, int>>& confusionMatrix, std::ostream& result_file) {
+	int TP = 0, TN = 0, FP = 0, FN = 0;
+	int totalPositive = 0, totalNegative = 0;
+
+	// Calculate TP, TN, FP, FN for each character pair in confusion matrix
+	for (const auto& [actualChar, predictions] : confusionMatrix) {
+		for (const auto& [predictedChar, count] : predictions) {
+			if (actualChar == predictedChar) {
+				TP += count; // True Positive
+			}
+			else {
+				FN += count; // False Negative for actual
+				FP += count; // False Positive for predicted
+			}
+		}
+	}
+
+	// Accuracy
+	int total = TP + FP + FN;
+	double accuracy = (total > 0) ? (double)(TP) / total : 0;
+
+	// Precision
+	double precision = (TP + FP > 0) ? (double)TP / (TP + FP) : 0;
+
+	// Recall
+	double recall = (TP + FN > 0) ? (double)TP / (TP + FN) : 0;
+
+	// F1 score
+	double f1 = (precision + recall > 0) ? 2 * (precision * recall) / (precision + recall) : 0;
+
+	// Print Metrics
+	result_file << "Accuracy: " << accuracy << std::endl;
+	result_file << "Precision: " << precision << std::endl;
+	result_file << "Recall: " << recall << std::endl;
+	result_file << "F1 Score: " << f1 << std::endl;
+}
+
 void analyzePredictions(const std::unordered_map<std::string, std::unordered_map<int, std::string>>& platePredictions,
 	std::ostream& result_file) {
 	int totalLevenshtein = 0;
@@ -2276,6 +2374,10 @@ void analyzePredictions(const std::unordered_map<std::string, std::unordered_map
 	int bestTotalCommonChars = 0;
 	int bestTotalLengthDiff = 0;
 	int totalPlates = 0;
+	int totalPlatesLength = 0;
+
+	// Confusion matrix to track character-level misclassifications
+	std::unordered_map<char, std::unordered_map<char, int>> confusionMatrix;
 
 	for (const auto& [plateName, candidates] : platePredictions) {
 		result_file << "Analysis for Plate: " << plateName << std::endl;
@@ -2283,49 +2385,51 @@ void analyzePredictions(const std::unordered_map<std::string, std::unordered_map
 		int bestLevenshtein = INT_MAX;
 		int bestCommonChars = 0;
 		int bestLengthDiff = INT_MAX;
+		std::string bestCandidate;
 
+		// Find the best candidate for the current plate
 		for (const auto& [candidateIndex, mergedString] : candidates) {
 			int levenshtein = levenshteinDistance(plateName, mergedString);
 			int commonChars = countCommonCharacters(plateName, mergedString);
 			int lengthDiff = std::abs((int)plateName.size() - (int)mergedString.size());
 
-			result_file << "  Candidate " << candidateIndex << ": " << mergedString << std::endl;
-			result_file << "    Levenshtein Distance: " << levenshtein << std::endl;
-			result_file << "    Common Characters: " << commonChars << std::endl;
-			result_file << "    Length Difference: " << lengthDiff << std::endl;
-
-			totalLevenshtein += levenshtein;
-			totalCommonChars += commonChars;
-			totalLengthDiff += lengthDiff;
-			++totalCandidates;
-
-			// Track the best candidate for the current plate
+			// Track the best candidate
 			if (levenshtein < bestLevenshtein) {
 				bestLevenshtein = levenshtein;
 				bestCommonChars = commonChars;
 				bestLengthDiff = lengthDiff;
+				bestCandidate = mergedString;
 			}
 		}
 
-		// Update overall best analysis metrics
+		// Update confusion matrix and metrics for the best candidate only
+		updateConfusionMatrix(plateName, bestCandidate, confusionMatrix);
+
+		// Update overall analysis metrics for the best candidate
 		bestTotalLevenshtein += bestLevenshtein;
 		bestTotalCommonChars += bestCommonChars;
 		bestTotalLengthDiff += bestLengthDiff;
 		++totalPlates;
-	}
+		totalPlatesLength += (int)plateName.size();
 
-	// Overall analysis for all candidates
-	result_file << "Overall Analysis (All Candidates):" << std::endl;
-	result_file << "  Average Levenshtein Distance: " << (totalCandidates > 0 ? totalLevenshtein / totalCandidates : 0) << std::endl;
-	result_file << "  Total Common Characters: " << totalCommonChars << std::endl;
-	result_file << "  Average Length Difference: " << (totalCandidates > 0 ? totalLengthDiff / totalCandidates : 0) << std::endl;
+		// Print results for the best candidate
+		result_file << "  Best Candidate: " << bestCandidate << std::endl;
+		result_file << "    Levenshtein Distance: " << bestLevenshtein << std::endl;
+		result_file << "    Common Characters: " << bestCommonChars << std::endl;
+		result_file << "    Length Difference: " << bestLengthDiff << std::endl;
+	}
 
 	// Overall analysis for best candidates only
 	result_file << "Overall Analysis (Best Candidates):" << std::endl;
 	result_file << "  Average Levenshtein Distance: " << (totalPlates > 0 ? bestTotalLevenshtein / totalPlates : 0) << std::endl;
 	result_file << "  Total Common Characters: " << bestTotalCommonChars << std::endl;
 	result_file << "  Average Length Difference: " << (totalPlates > 0 ? bestTotalLengthDiff / totalPlates : 0) << std::endl;
+
+	// Print confusion matrix and metrics for the best candidates
+	printConfusionMatrix(confusionMatrix, result_file);
+	printMetrics(confusionMatrix, result_file);
 }
+
 
 
 int main()
@@ -3349,7 +3453,7 @@ int main()
 										// Ensure charIndex is within bounds of plateName length
 										if (charIndex >= plateName.size()) {
 											break; // Exit if charIndex exceeds plateName length
-										}			
+										}
 										img = repeatClosingVertical(img, 1);
 										cv::resize(img, img, cv::Size(128, 64));
 										//if (img.rows < 25) {
@@ -3363,7 +3467,7 @@ int main()
 										//	img = repeatClosingVertical(img, 1);
 										//	cv::resize(img, img, cv::Size(128, 64)); // Resize the image to match input size
 										//}
-										
+
 										img = basicGlobalThresholding(img); // Apply thresholding to binarize the image										
 										std::vector<double> hogFeatures;
 										computeHOG(img, 8, 2, 9, hogFeatures); // Extract HOG features
@@ -3463,13 +3567,11 @@ int main()
 							likelihood.at<double>(c, j) = feature_likelihoods[j];
 
 							// Log the normalized likelihood for debugging
-							result_file << "Normalized Likelihood for class " << c << ", feature " << j << " = "
-								<< feature_likelihoods[j] << std::endl;
+							/*result_file << "Normalized Likelihood for class " << c << ", feature " << j << " = "
+								<< feature_likelihoods[j] << std::endl;*/
 						}
 					}
 				}
-
-
 
 				//result_file << "Count zero = " << countZero << "; Count non-zero = " << countNonZero << std::endl;
 				int correct = 0, total = 0;
@@ -3555,7 +3657,6 @@ int main()
 				result_file << "\n--------------------------------------\n";
 
 				const std::string baseTrainPath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/characters/";
-				//const std::string baseTestPath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/charactersResulted/";
 				const std::string baseTestPath = "C:/Users/Cipleu/Documents/IULIA/SCOALA/facultate/Year 4 Semester 1/PRS/Lab/Project/datasetOne/";
 				const int C = 36; // 0-9 digits + 26 letters
 				const int d = 128 * 64; // feature dimensions
@@ -3570,7 +3671,6 @@ int main()
 						? "digit_" + std::to_string(c)
 						: "letter_" + std::string(1, char('A' + (c - 10)));
 					std::string folderPath = baseTrainPath + folderName;
-					//result_file << "Folder " << folderPath << std::endl;
 					std::string prefix = (c < 10)
 						? std::to_string(c)
 						: std::string(1, char('A' + (c - 10)));
@@ -3582,15 +3682,12 @@ int main()
 						if (img.empty()) break;
 
 						cv::resize(img, img, cv::Size(128, 64));
-						img = basicGlobalThresholding(img);
+						img = basicGlobalThresholding(img); // Thresholding applied
 
-						std::vector<double> hogFeatures;
-						computeHOG(img, 8, 2, 9, hogFeatures);
-
-						cv::Mat featureMat(hogFeatures);
-						featureMat = featureMat.reshape(1, 1);
-						featureMat.convertTo(featureMat, CV_32F);
-						//result_file<< "Computed HOG Features size: " << hogFeatures.size() << std::endl;
+						// Using pixel-based features instead of HOG
+						cv::Mat featureMat;
+						img = img.reshape(1, 1); // Flatten the image matrix
+						img.convertTo(featureMat, CV_32F); // Convert to float type
 
 						trainImages.push_back(featureMat);
 						trainLabels.push_back(c);
@@ -3610,22 +3707,19 @@ int main()
 				result_file << "Testing phase" << std::endl;
 				for (const auto& plateFolder : std::filesystem::directory_iterator(baseTestPath)) {
 					if (std::filesystem::is_directory(plateFolder)) {
-						std::string plateName = plateFolder.path().filename().string(); // Get folder name (e.g., "007PLATECOM")
+						std::string plateName = plateFolder.path().filename().string(); // Get folder name
 
-						// Ensure plateName is not empty
 						if (plateName.empty()) {
 							continue;
 						}
-						//result_file << "Plate: " << plateName << std::endl;
-						// Process each candidate folder inside the plate folder
+
 						for (const auto& candidateFolder : std::filesystem::directory_iterator(plateFolder.path())) {
 							if (std::filesystem::is_directory(candidateFolder)) {
-								//result_file << candidateFolder << std::endl;
 								std::string folderName = candidateFolder.path().filename().string();
 								int candidateIndex = -1; // Default to -1 for safety
-								if (folderName.rfind("candidate", 0) == 0) { // Check if folder name starts with "candidate"
+								if (folderName.rfind("candidate", 0) == 0) {
 									try {
-										candidateIndex = std::stoi(folderName.substr(9)); // Extract the numeric part
+										candidateIndex = std::stoi(folderName.substr(9)); // Extract numeric part
 									}
 									catch (const std::invalid_argument& e) {
 										std::cerr << "Invalid folder name: " << folderName << std::endl;
@@ -3637,8 +3731,7 @@ int main()
 									}
 								}
 
-								int charIndex = 0; // For keeping track of which character we're dealing with
-								// Iterate through the images in the candidate folder
+								int charIndex = 0; // For keeping track of characters
 								for (const auto& imgFile : std::filesystem::directory_iterator(candidateFolder.path())) {
 									if (imgFile.path().extension() == ".png") {
 										Mat img = imread(imgFile.path().string(), 0);
@@ -3646,59 +3739,41 @@ int main()
 
 										// Ensure charIndex is within bounds of plateName length
 										if (charIndex >= plateName.size()) {
-											break; // Exit if charIndex exceeds plateName length
+											break;
 										}
-										imshow("Initial", img);
-										result_file << "Image size: " << img.rows << " " << img.cols << std::endl;
-										//img = repeatOpening(img, 1);
-										//imshow("After Opening", img);
+
 										if (img.rows < 30) {
 											cv::GaussianBlur(img, img, cv::Size(3, 3), 0);
-											imshow("Blurred", img);
-											/*cv::adaptiveThreshold(img, img, 255, cv::ADAPTIVE_THRESH_GAUSSIAN_C, cv::THRESH_BINARY, 19, 2);
-											imshow("Thresholded", img);*/
-											img = basicGlobalThresholding(img); // Apply thresholding to binarize the image
-											imshow("Binarized", img);
+											img = basicGlobalThresholding(img); // Thresholding applied
 											img = repeatClosingVertical(img, 3);
-											imshow("After Closing", img);
-											cv::resize(img, img, cv::Size(128, 64)); // Resize the image to match input size
-											imshow("Resized", img);
+											cv::resize(img, img, cv::Size(128, 64)); // Resize to match input size
 											img = repeatOpening(img, 1);
-											imshow("After Opening", img);
 										}
 										else {
-											cv::resize(img, img, cv::Size(128, 64)); // Resize the image to match input size
-											imshow("Resized", img);
+											cv::resize(img, img, cv::Size(128, 64));
 										}
 
-										img = basicGlobalThresholding(img); // Apply thresholding to binarize the image
-										imshow("Binarized", img);
-										std::vector<double> hogFeatures;
-										show = true;
-										computeHOG(img, 8, 2, 9, hogFeatures); // Extract HOG features
-										show = false;
+										std::vector<double> pixelFeatures(img.begin<uchar>(), img.end<uchar>()); // Flatten pixels
 
-										cv::Mat featureMat(hogFeatures);
-										featureMat = featureMat.reshape(1, 1); // Reshape into a single row
-										featureMat.convertTo(featureMat, CV_32F); // Convert to 32-bit float
+										cv::Mat featureMat(pixelFeatures);
+										featureMat = featureMat.reshape(1, 1); // Flatten it
+										featureMat.convertTo(featureMat, CV_32F);
 
 										// Map each character in the plate name to its corresponding label
 										char character = plateName[charIndex];
-										int label = -1; // Initialize label
+										int label = -1;
 
-										// Handle digits and letters
 										if (character >= '0' && character <= '9') {
 											label = character - '0'; // Label digits 0-9 as 0-9
 										}
 										else if (character >= 'A' && character <= 'Z') {
 											label = character - 'A' + 10; // Label letters A-Z as 10-35
 										}
-										std::string imageName = imgFile.path().stem().string();
-										// Ensure the label is valid
+
 										if (label != -1) {
 											testImages.push_back(featureMat);
 											testLabels.push_back(label);
-											TestImageInfo info = { testIndex, plateName, candidateIndex, imageName };
+											TestImageInfo info = { testIndex, plateName, candidateIndex, imgFile.path().stem().string() };
 											testImageInfoVec.push_back(info);
 										}
 										charIndex++;
@@ -3731,68 +3806,51 @@ int main()
 
 					priors.at<double>(c, 0) = static_cast<double>(classCount) / X_train.rows;
 
-					for (int j = 0; j < 4320; ++j) {
-						//double count = 0.0;
-						//for (int k = 0; k < classSamples.rows; ++k) {
-						//	/*if (classSamples.at<double>(k, j) != 0) {
-						//		count++;
-						//	}*/
-						//	count += classSamples.at<double>(k, j);
-						//}
-						//if (count == 0) {
-						//	likelihood.at<double>(c, j) = (count + 1) / (classCount + C);
-						//	result_file << "Count = " << count << "; Likelihood = " << likelihood.at<double>(c, j) << std::endl;
-						//	countZero++;
-						//}
-						//else {
-						//	likelihood.at<double>(c, j) = count / classCount;
-						//	result_file << "Count = " << count << "; Likelihood = " << likelihood.at<double>(c, j) << std::endl;
-						//	countNonZero++;
-						//}
+					std::vector<double> feature_likelihoods(d, 0.0);
+
+					for (int j = 0; j < d; ++j) {
 						double feature_value = classSamples.at<double>(0, j); // Example for the first sample
 						double mean_value = mean.at<double>(j);
 						double stddev_value = stddev.at<double>(j);
 
-						// Handle zero or small stddev values
+						// Prevent zero variance
 						if (stddev_value < 1e-6) {
-							stddev_value = 1e-6;  // Prevent division by zero
-						}
-						else if (stddev_value > 1e6) {
-							stddev_value = 1e6;  // Prevent overflow with very large values
+							stddev_value = 1e-6;  // Minimum stddev to avoid division by zero
 						}
 
-						// Check for NaN values in mean or stddev
+						// Ensure no NaN values in mean or stddev
 						if (std::isnan(mean_value) || std::isnan(stddev_value)) {
-							likelihood.at<double>(c, j) = 0.0;  // Or handle it differently
+							feature_likelihoods[j] = 1e-10;  // Default to a very small value
 							continue;
 						}
 
-						// Calculate exponent
-						double exponent = -0.5 * pow(feature_value - mean_value, 2) /
-							(stddev_value * stddev_value);
+						// Calculate log-likelihood
+						double log_likelihood = -std::log(stddev_value * sqrt(2 * CV_PI)) -
+							0.5 * pow((feature_value - mean_value) / stddev_value, 2);
 
-						// Cap exponent to avoid overflow/underflow
-						if (exponent < -700) {
-							exponent = -700;
-						}
-						else if (exponent > 700) {
-							exponent = 700;
-						}
+						// Exponential transformation to obtain likelihood
+						double likelihood_value = exp(log_likelihood);
 
-						double likelihood_value = (1.0 / sqrt(2 * CV_PI * stddev_value * stddev_value)) *
-							exp(exponent);
-
-						// Handle NaN likelihood values
-						if (std::isnan(likelihood_value)) {
-							result_file << "NaN encountered for class " << c << ", feature " << j << std::endl;
-							result_file << "Feature value: " << feature_value << ", Mean: " << mean.at<double>(j)
-								<< ", Stddev: " << stddev.at<double>(j) << std::endl;
-							likelihood_value = 1e-10;  // Default to a small value
+						// Handle edge cases
+						if (std::isnan(likelihood_value) || likelihood_value < 1e-10) {
+							likelihood_value = 1e-10;  // Default to a very small value
 						}
 
-						// Log the likelihood for each feature
-						//result_file << "Likelihood for class " << c << ", feature " << j << " = " << likelihood_value << std::endl;
-						likelihood.at<double>(c, j) = likelihood_value;
+						// Store likelihood
+						feature_likelihoods[j] = likelihood_value;
+					}
+
+					// Normalize likelihoods across features
+					double sum_likelihoods = std::accumulate(feature_likelihoods.begin(), feature_likelihoods.end(), 0.0);
+					if (sum_likelihoods > 0) {
+						for (int j = 0; j < d; ++j) {
+							feature_likelihoods[j] /= sum_likelihoods; // Normalize to [0, 1]
+							likelihood.at<double>(c, j) = feature_likelihoods[j];
+
+							// Log the normalized likelihood for debugging
+							/*result_file << "Normalized Likelihood for class " << c << ", feature " << j << " = "
+								<< feature_likelihoods[j] << std::endl;*/
+						}
 					}
 				}
 				//result_file << "Count zero = " << countZero << "; Count non-zero = " << countNonZero << std::endl;
@@ -3871,6 +3929,7 @@ int main()
 			result_file.close();
 		}
 		break;
+
 		}
 	} while (op != 0);
 	return 0;
