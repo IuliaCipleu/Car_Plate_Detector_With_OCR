@@ -3421,70 +3421,56 @@ int main()
 
 					priors.at<double>(c, 0) = static_cast<double>(classCount) / X_train.rows;
 
+					std::vector<double> feature_likelihoods(4320, 0.0);
+
 					for (int j = 0; j < 4320; ++j) {
-						//double count = 0.0;
-						//for (int k = 0; k < classSamples.rows; ++k) {
-						//	/*if (classSamples.at<double>(k, j) != 0) {
-						//		count++;
-						//	}*/
-						//	count += classSamples.at<double>(k, j);
-						//}
-						//if (count == 0) {
-						//	likelihood.at<double>(c, j) = (count + 1) / (classCount + C);
-						//	result_file << "Count = " << count << "; Likelihood = " << likelihood.at<double>(c, j) << std::endl;
-						//	countZero++;
-						//}
-						//else {
-						//	likelihood.at<double>(c, j) = count / classCount;
-						//	result_file << "Count = " << count << "; Likelihood = " << likelihood.at<double>(c, j) << std::endl;
-						//	countNonZero++;
-						//}
 						double feature_value = classSamples.at<double>(0, j); // Example for the first sample
 						double mean_value = mean.at<double>(j);
 						double stddev_value = stddev.at<double>(j);
 
-						// Handle zero or small stddev values
+						// Prevent zero variance
 						if (stddev_value < 1e-6) {
-							stddev_value = 1e-6;  // Prevent division by zero
-						}
-						else if (stddev_value > 1e6) {
-							stddev_value = 1e6;  // Prevent overflow with very large values
+							stddev_value = 1e-6;  // Minimum stddev to avoid division by zero
 						}
 
-						// Check for NaN values in mean or stddev
+						// Ensure no NaN values in mean or stddev
 						if (std::isnan(mean_value) || std::isnan(stddev_value)) {
-							likelihood.at<double>(c, j) = 0.0;  // Or handle it differently
+							feature_likelihoods[j] = 1e-10;  // Default to a very small value
 							continue;
 						}
 
-						// Calculate exponent
-						double exponent = -0.5 * pow(feature_value - mean_value, 2) /
-							(stddev_value * stddev_value);
+						// Calculate log-likelihood
+						double log_likelihood = -std::log(stddev_value * sqrt(2 * CV_PI)) -
+							0.5 * pow((feature_value - mean_value) / stddev_value, 2);
 
-						// Cap exponent to avoid overflow/underflow
-						if (exponent < -700) {
-							exponent = -700;
-						}
-						else if (exponent > 700) {
-							exponent = 700;
-						}
+						// Exponential transformation to obtain likelihood
+						double likelihood_value = exp(log_likelihood);
 
-						double likelihood_value = (1.0 / sqrt(2 * CV_PI * stddev_value * stddev_value)) *
-							exp(exponent);
-
-						// Handle NaN likelihood values
-						if (std::isnan(likelihood_value)) {
-							result_file << "NaN encountered for class " << c << ", feature " << j << std::endl;
-							result_file << "Feature value: " << feature_value << ", Mean: " << mean.at<double>(j)
-								<< ", Stddev: " << stddev.at<double>(j) << std::endl;
-							likelihood_value = 1e-10;  // Default to a small value
+						// Handle edge cases
+						if (std::isnan(likelihood_value) || likelihood_value < 1e-10) {
+							likelihood_value = 1e-10;  // Default to a very small value
 						}
 
-						// Log the likelihood for each feature
-						result_file << "Likelihood for class " << c << ", feature " << j << " = " << likelihood_value << std::endl;
-						likelihood.at<double>(c, j) = likelihood_value;
+						// Store likelihood
+						feature_likelihoods[j] = likelihood_value;
+					}
+
+					// Normalize likelihoods across features
+					double sum_likelihoods = std::accumulate(feature_likelihoods.begin(), feature_likelihoods.end(), 0.0);
+					if (sum_likelihoods > 0) {
+						for (int j = 0; j < 4320; ++j) {
+							feature_likelihoods[j] /= sum_likelihoods; // Normalize to [0, 1]
+							likelihood.at<double>(c, j) = feature_likelihoods[j];
+
+							// Log the normalized likelihood for debugging
+							result_file << "Normalized Likelihood for class " << c << ", feature " << j << " = "
+								<< feature_likelihoods[j] << std::endl;
+						}
 					}
 				}
+
+
+
 				//result_file << "Count zero = " << countZero << "; Count non-zero = " << countNonZero << std::endl;
 				int correct = 0, total = 0;
 				Mat confusionMatrix = Mat::zeros(C, C, CV_32S);
